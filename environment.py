@@ -445,7 +445,7 @@ class BombeRLeWorld(GenericWorld):
                     think_time = float("inf")
 
                 self.logger.info(f'Agent <{a.name}> chose action {action} in {think_time:.2f}s.')
-                if think_time > a.available_think_time:
+                if False: #think_time > a.available_think_time:
                     next_think_time = a.base_timeout - (think_time - a.available_think_time)
                     self.logger.warning(f'Agent <{a.name}> exceeded think time by {think_time - a.available_think_time:.2f}s. Setting action to "WAIT" and decreasing available time for next round to {next_think_time:.2f}s.')
                     action = "WAIT"
