@@ -78,10 +78,7 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
     new_feature_index = state_to_index(new_game_state)
     new_action = ACTION_TO_INDEX[determine_next_action(new_game_state, self.Q)]
 
-    old_q = self.Q[old_feature_index, old_action]
     self.Q[old_feature_index, old_action] += LEARNING_RATE * (reward + DISCOUNT_FACTOR * self.Q[new_feature_index, new_action] - self.Q[old_feature_index][old_action])
-    if np.isnan(self.Q[old_feature_index, old_action]):
-        print("NAN")
 
     #print(f"STATE (MEAN: {np.mean(self.Q)}, MAX: {np.max(self.Q)}, MIN: {np.min(self.Q)}")
 
