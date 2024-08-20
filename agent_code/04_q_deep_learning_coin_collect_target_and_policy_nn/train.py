@@ -17,14 +17,14 @@ Transition = namedtuple('Transition',
                         ('state', 'action', 'next_state', 'reward'))
 
 # Hyper parameters -- DO modify
-TRANSITION_HISTORY_SIZE = 300  # keep only ... last transitions
-MINI_BATCH_SIZE = 30
+TRANSITION_HISTORY_SIZE = 20  # keep only ... last transitions
+MINI_BATCH_SIZE = 20
 RECORD_ENEMY_TRANSITIONS = 1.0  # record enemy transitions with probability ...
 
-STEPS_BEFORE_SYNC = 10
+STEPS_BEFORE_SYNC = 50
 
-LEARNING_RATE_OPTIMIZER = 0.005
-DISCOUNT_FACTOR = 0.85
+LEARNING_RATE_OPTIMIZER = 0.0005
+DISCOUNT_FACTOR = 0.5
 
 # Events
 MOVED_CLOSER_EVENT = "MOVED_CLOSER"
@@ -45,8 +45,8 @@ def setup_training(self):
     self.iteration = 0
     self.round = 0
     self.loss = nn.MSELoss()
-    self.optimizer = torch.optim.Adam(self.policy_model.parameters(), lr=LEARNING_RATE_OPTIMIZER)
 
+    self.optimizer = torch.optim.Adam(self.policy_model.parameters(), lr=LEARNING_RATE_OPTIMIZER)
 
 def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_state: dict, events: List[str]):
     """

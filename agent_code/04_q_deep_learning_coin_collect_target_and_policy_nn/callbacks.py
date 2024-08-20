@@ -24,9 +24,15 @@ def create_network():
         nn.Linear(16, len(ACTIONS))
     )"""
     return nn.Sequential(
-        nn.Linear(4, 128),
+        nn.Linear(4, 32),
         nn.ReLU(),
-        nn.Linear(128, len(ACTIONS))
+        nn.Linear(32, 64),
+        nn.ReLU(),
+        nn.Linear(64, 64),
+        nn.ReLU(),
+        nn.Linear(64, 64),
+        nn.ReLU(),
+        nn.Linear(64, len(ACTIONS))
     )
 
 
