@@ -1,4 +1,3 @@
-import math
 import os
 import pickle
 import random
@@ -6,8 +5,6 @@ from torch import nn
 import torch
 
 import numpy as np
-
-import torch.nn.functional as F
 
 from .helper_functions import distance_to_nearest_coins
 
@@ -25,21 +22,29 @@ EPS_END = 0.001
 EPS_DECAY = 1000
 
 
-class DQN(nn.Module):
-    def __init__(self):
-        super(DQN, self).__init__()
-        self.layer1 = nn.Linear(4, 32)
-        self.layer2 = nn.Linear(32, 64)
-        self.layer3 = nn.Linear(64, 64)
-        self.layer4 = nn.Linear(64, 64)
-        self.layer5 = nn.Linear(64, len(ACTIONS))
-
-    def forward(self, x):
-        x = F.relu(self.layer1(x))
-        x = F.relu(self.layer2(x))
-        x = F.relu(self.layer3(x))
-        x = F.relu(self.layer4(x))
-        return self.layer5(x)
+def create_network():
+    """return nn.Sequential(
+        nn.Linear(4, 256),
+        nn.ReLU(),
+        nn.Linear(256, 512),
+        nn.ReLU(),
+        nn.Linear(512, 256),
+        nn.ReLU(),
+        nn.Linear(256, 16),
+        nn.ReLU(),
+        nn.Linear(16, len(ACTIONS))
+    )"""
+    return nn.Sequential(
+        nn.Linear(4, 32),
+        nn.ReLU(),
+        nn.Linear(32, 64),
+        nn.ReLU(),
+        nn.Linear(64, 64),
+        nn.ReLU(),
+        nn.Linear(64, 64),
+        nn.ReLU(),
+        nn.Linear(64, len(ACTIONS))
+    )
 
 
 def setup(self):
@@ -56,18 +61,17 @@ def setup(self):
 
     :param self: This object is passed to all callbacks and you can set arbitrary values.
     """
-    self.iteration = 0
     if self.train or not os.path.isfile("my-saved-model.pt"):
         self.logger.info("Setting up model from scratch.")
-        self.policy_net = DQN()
-        self.target_net = DQN()
-        self.target_net.load_state_dict(self.policy_net.state_dict())
+        self.policy_model = create_network()
+        self.target_model = create_network()
+        self.target_model.load_state_dict(self.policy_model.state_dict())
     else:
         self.logger.info("Loading model from saved state.")
         with open("my-saved-model.pt", "rb") as file:
-            self.policy_net = pickle.load(file)
-            self.target_net = DQN()
-            self.target_net.load_state_dict(self.policy_net.state_dict())
+            self.policy_model = pickle.load(file)
+            self.target_model = create_network()
+            self.target_model.load_state_dict(self.policy_model.state_dict())
 
 
 def act(self, game_state: dict) -> str:
@@ -80,15 +84,14 @@ def act(self, game_state: dict) -> str:
     :return: The action to take as a string.
     """
 
-    random_prob = EPS_END + (EPS_START - EPS_END) * math.exp(-1. * self.iteration / EPS_DECAY)
+    random_prob = .2
     if self.train and random.random() < random_prob:
         self.logger.debug("Choosing action purely at random.")
         return np.random.choice(ACTIONS, p=[.2, .2, .2, .2, .2])
 
     self.logger.debug("Querying model for action.")
     with torch.no_grad():
-        action = ACTIONS[self.policy_net(state_to_features(game_state)).argmax()]
-        return action
+        return ACTIONS[self.policy_model(torch.from_numpy(state_to_features(game_state)).to(torch.float32)).argmax()]
 
 
 def state_to_features(game_state: dict) -> np.array:
@@ -113,18 +116,18 @@ def state_to_features(game_state: dict) -> np.array:
     channels = []
 
     # whole grid
-    # field = game_state['field']
-    # for coin in game_state['coins']:
+    #field = game_state['field']
+    #for coin in game_state['coins']:
     #    field[coin] = 2
-    # field[game_state['self'][3]] = 3
-    # for other in game_state['others']:
+    #field[game_state['self'][3]] = 3
+    #for other in game_state['others']:
     #    field[other[3]] = 4
-    # field = field[1:16, 1:16]
-    # channels.append(field.flatten())
+    #field = field[1:16, 1:16]
+    #channels.append(field.flatten())
     channels.append(distance_to_nearest_coins(game_state))
 
     # concatenate them as a feature tensor (they must have the same shape), ...
-    stacked_channels = torch.stack(channels)
+    stacked_channels = np.stack(channels)
 
     # and return them as a vector
     return stacked_channels.reshape(-1)
