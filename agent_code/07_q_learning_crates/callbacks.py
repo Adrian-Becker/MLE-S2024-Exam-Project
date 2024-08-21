@@ -5,26 +5,18 @@ import random
 
 import numpy as np
 
-ACTIONS = ['LEFT', 'RIGHT', 'UP', 'DOWN', 'WAIT']
-ACTION_INDICES = np.array([0, 1, 2, 3, 4]).astype(int)
+ACTIONS = ['LEFT', 'RIGHT', 'UP', 'DOWN', 'WAIT', 'BOMB']
+ACTION_INDICES = np.array([0, 1, 2, 3, 4, 5]).astype(int)
 ACTION_TO_INDEX = {
     'LEFT': 0, 'RIGHT': 1, 'UP': 2, 'DOWN': 3, 'WAIT': 4, 'BOMB': 5
 }
-ACTIONS_PROBABILITIES = [0.2, 0.2, 0.2, 0.2, 0.2]
+ACTIONS_PROBABILITIES = [0.2, 0.2, 0.2, 0.2, 0.1, 0.1]
 
 WIDTH = 17
 HEIGHT = 17
 
 """
 state vector: 
-coins: 0-3;4, 2^4=16 (UP, DOWN, LEFT, RIGHT) 0=not the shortest direction, 1=shortest direction		    05
-crates: 0-3;4, 2^4=16 (UP, DOWN, LEFT, RIGHT) 								                            05
-        a) no crates to destroy => 0=not the shortest direction, 1=shortest direction
-        b) crates to destroy => 0=no improvement, 1=more crates to destroy		
-enemies: 0-3;4, 2^4=16 (UP, DOWN, LEFT, RIGHT) 								                            05
-        a) no enemies to destroy => 0=not the shortest direction, 1=shortest direction		
-        b) enemies to destroy =>0=no improvement, 1=more enemies to destroy	
-
 neighbor fields: 0 safe, 1 death/wall, 2 unsafe (might explode in >1 turns) (3^4=81)			        81
 
 current square: 											                                            04
@@ -33,9 +25,21 @@ current square: 											                                            04
 - 2 bomb destroys one enemey/crate, 
 - 3 bomb destroys multiple enemies/crates OR is guaranteed to kill an enemy
 
+coins: 0-3;4, 2^4=16 (UP, DOWN, LEFT, RIGHT) 0=not the shortest direction, 1=shortest direction		    05
+crates: 0-3;4, 2^4=16 (UP, DOWN, LEFT, RIGHT) 								                            05
+        a) no crates to destroy => 0=not the shortest direction, 1=shortest direction
+        b) crates to destroy => 0=no improvement, 1=more crates to destroy		
+enemies: 0-3;4, 2^4=16 (UP, DOWN, LEFT, RIGHT) 								                            05
+        a) no enemies to destroy => 0=not the shortest direction, 1=shortest direction		
+        b) enemies to destroy =>0=no improvement, 1=more enemies to destroy	
+
 = 40500
 """
-FEATURE_SHAPE = (4, 4, 4, 81, 4)
+FEATURE_SHAPE = (3, 3, 3, 3, 4, 5, 5, 5, len(ACTIONS))
+
+EPS_START = 0.999
+EPS_END = 0.001
+EPS_DECAY = 1000
 
 
 def setup(self):
@@ -43,12 +47,13 @@ def setup(self):
     This is called once when loading each agent.
     :param self: This object is passed to all callbacks and you can set arbitrary values.
     """
-    if self.train or not os.path.isfile("q-table.pt"):
+    self.iteration = 0
+    if self.train or not os.path.isfile("q-table_no_history.pt"):
         self.logger.info("Setting up model from scratch.")
-        self.Q = np.zeros((5, len(ACTIONS)))
+        self.Q = np.zeros(FEATURE_SHAPE).astype(np.float32)
     else:
         self.logger.info("Loading model from saved state.")
-        with open("q-table.pt", "rb") as file:
+        with open("q-table_no_history.pt", "rb") as file:
             self.Q = pickle.load(file)
         with np.printoptions(threshold=np.inf):
             print(self.Q)
@@ -57,7 +62,7 @@ def setup(self):
 def determine_next_action(game_state: dict, Q) -> str:
     features = state_to_features(game_state)
 
-    best_action_index = np.array(list(map(lambda action: Q[features, action], ACTION_INDICES))).argmax()
+    best_action_index = np.array(list(map(lambda action: Q[features][action], ACTION_INDICES))).argmax()
 
     return ACTIONS[best_action_index]
 
@@ -68,7 +73,7 @@ def act(self, game_state: dict) -> str:
     :param game_state: The dictionary that describes everything on the board.
     :return: The action to take as a string.
     """
-    random_prob = .2
+    random_prob = EPS_END + (EPS_START - EPS_END) * math.exp(-1. * self.iteration / EPS_DECAY)
     if self.train and random.random() < random_prob:
         self.logger.debug("Choosing action purely at random.")
         return np.random.choice(ACTIONS, p=ACTIONS_PROBABILITIES)
@@ -137,6 +142,8 @@ def prepare_field_coins(game_state: dict):
     field = np.abs(game_state['field'])
     explosion_map = game_state['explosion_map']
     field += explosion_map.astype(int)
+    for other in game_state['others']:
+        field[other[3]] = 1
 
     targets = np.zeros_like(field)
     for coin in game_state['coins']:
@@ -145,9 +152,7 @@ def prepare_field_coins(game_state: dict):
     return np.clip(field, 0, 1), targets
 
 
-def determine_coin_value(x, y, game_state):
-    field, targets = prepare_field_coins(game_state)
-
+def determine_best_direction(x, y, field, targets):
     distance_up = breadth_first_search((x, y - 1), field, targets)
     distance_down = breadth_first_search((x, y + 1), field, targets)
     distance_left = breadth_first_search((x - 1, y), field, targets)
@@ -161,10 +166,182 @@ def determine_coin_value(x, y, game_state):
     return choice
 
 
-# TODO
-def determine_crate_value(x, y, whole_field):
-    field = np.clip(whole_field, 0, 1)
-    targets = np.abs(np.clip(whole_field, -1, 0))
+def determine_coin_value(x, y, game_state: dict):
+    field, targets = prepare_field_coins(game_state)
+
+    return determine_best_direction(x, y, field, targets)
+
+
+def count_destroyable_crates(x, y, game_state: dict):
+    count_crates = 0
+    field = game_state['field']
+
+    for dx in range(1, 3):
+        if field[x + dx, y] == -1:
+            break
+        if field[x + dx, y] == 1:
+            count_crates += 1
+    for dx in range(1, 3):
+        if field[x - dx, y] == -1:
+            break
+        if field[x - dx, y] == 1:
+            count_crates += 1
+    for dy in range(1, 3):
+        if field[x, y + dy] == -1:
+            break
+        if field[x, y + dy] == 1:
+            count_crates += 1
+    for dy in range(1, 3):
+        if field[x, y - dy] == -1:
+            break
+        if field[x, y - dy] == 1:
+            count_crates += 1
+
+    return count_crates
+
+
+def count_destroyable_enemies(x, y, game_state: dict):
+    count_enemies = 0
+    field = game_state['field']
+
+    for other in game_state['others']:
+        field[other[3]] = 2
+
+    for dx in range(1, 3):
+        if field[x + dx, y] == -1:
+            break
+        if field[x + dx, y] == 2:
+            count_enemies += 1
+    for dx in range(1, 3):
+        if field[x - dx, y] == -1:
+            break
+        if field[x - dx, y] == 2:
+            count_enemies += 1
+    for dy in range(1, 3):
+        if field[x, y + dy] == -1:
+            break
+        if field[x, y + dy] == 2:
+            count_enemies += 1
+    for dy in range(1, 3):
+        if field[x, y - dy] == -1:
+            break
+        if field[x, y - dy] == 2:
+            count_enemies += 1
+
+    for other in game_state['others']:
+        field[other[3]] = 0
+
+    return count_enemies
+
+
+def count_destroyable_crates_and_enemies(x, y, game_state: dict):
+    count_crates = 0
+    count_enemies = 0
+    field = game_state['field']
+
+    for other in game_state['others']:
+        field[other[3]] = 2
+
+    for dx in range(1, 3):
+        if field[x + dx, y] == -1:
+            break
+        if field[x + dx, y] == 1:
+            count_crates += 1
+        if field[x + dx, y] == 2:
+            count_enemies += 1
+    for dx in range(1, 3):
+        if field[x - dx, y] == -1:
+            break
+        if field[x - dx, y] == 1:
+            count_crates += 1
+        if field[x - dx, y] == 2:
+            count_enemies += 1
+    for dy in range(1, 3):
+        if field[x, y + dy] == -1:
+            break
+        if field[x, y + dy] == 1:
+            count_crates += 1
+        if field[x, y + dy] == 2:
+            count_enemies += 1
+    for dy in range(1, 3):
+        if field[x, y - dy] == -1:
+            break
+        if field[x, y - dy] == 1:
+            count_crates += 1
+        if field[x, y - dy] == 2:
+            count_enemies += 1
+
+    for other in game_state['others']:
+        field[other[3]] = 0
+
+    return count_crates, count_enemies
+
+
+def determine_field_state(x, y, prepped_field, explosion_map):
+    if prepped_field[x, y] > 0:
+        return 2
+    if explosion_map[x, y] > 1:
+        return 1
+    if explosion_map[x, y] == 1:
+        return 2
+    return 0
+
+
+def determine_neighbor_fields(x, y, game_state: dict):
+    field = np.abs(game_state['field'])
+    for other in game_state['others']:
+        field[other[3]] = 1
+    explosion_map = game_state['explosion_map'].astype(int)
+
+    return np.array([
+        determine_field_state(x, y - 1, field, explosion_map),
+        determine_field_state(x, y + 1, field, explosion_map),
+        determine_field_state(x - 1, y, field, explosion_map),
+        determine_field_state(x + 1, y, field, explosion_map)
+    ])
+
+
+def determine_crate_value(x, y, game_state: dict):
+    field = np.clip(game_state['field'], 0, 1)
+    for other in game_state['others']:
+        field[other[3]] = 1
+    field += game_state['explosion_map'].astype(int)
+    field = np.clip(field, 0, 1)
+
+    targets = np.abs(np.clip(game_state['field'], -1, 0))
+
+    return determine_best_direction(x, y, field, targets)
+
+
+def determine_crate_value(x, y, game_state: dict):
+    field = np.abs(game_state['field'])
+    field += game_state['explosion_map'].astype(int)
+
+    targets = np.zeros_like(field)
+    for other in game_state['others']:
+        targets[other[3]] = 1
+
+    return determine_best_direction(x, y, field, targets)
+
+
+def determine_is_worth_to_move_crates(x, y, game_state: dict, count_crates):
+    count_up = count_destroyable_crates(x, y - 1, game_state)
+    count_down = count_destroyable_crates(x, y + 1, game_state)
+    count_left = count_destroyable_crates(x - 1, y, game_state)
+    count_right = count_destroyable_crates(x + 1, y, game_state)
+
+    counts = np.array([count_up, count_down, count_left, count_right, count_crates])
+    return np.random.choice(np.flatnonzero(counts == counts.max()))
+
+
+def determine_is_worth_to_move_enemies(x, y, game_state: dict, count_enemies):
+    count_up = count_destroyable_enemies(x, y - 1, game_state)
+    count_down = count_destroyable_enemies(x, y + 1, game_state)
+    count_left = count_destroyable_enemies(x - 1, y, game_state)
+    count_right = count_destroyable_enemies(x + 1, y, game_state)
+
+    counts = np.array([count_up, count_down, count_left, count_right, count_enemies])
+    return np.random.choice(np.flatnonzero(counts == counts.max()))
 
 
 def state_to_features(game_state: dict) -> np.array:
@@ -188,12 +365,38 @@ def state_to_features(game_state: dict) -> np.array:
     # For example, you could construct several channels of equal shape, ...
     position = game_state['self'][3]
     x, y = position
-    field = game_state['field']
 
-    channels = []
-    channels.append(determine_coin_value(x, y, game_state))
+    features = []
+    features.extend(determine_neighbor_fields(x, y, game_state))
 
-    # concatenate them as a feature tensor (they must have the same shape), ...
-    stacked_channels = np.stack(channels)
-    # and return them as a vector
-    return stacked_channels.reshape(-1)
+    count_crates, count_enemies = count_destroyable_crates_and_enemies(x, y, game_state)
+
+    if game_state['explosion_map'][x, y] > 0:
+        # is dangerous => we need to move
+        features.append(1)
+    elif game_state['self'][2]:
+        # can place bomb
+        if count_crates + count_enemies == 1:
+            # can destroy one
+            features.append(2)
+        elif count_crates + count_enemies > 1:
+            # can destroy multiple
+            features.append(3)
+        else:
+            features.append(0)
+    else:
+        features.append(0)
+
+    features.append(determine_coin_value(x, y, game_state))
+
+    if count_crates == 0:
+        features.append(determine_crate_value(x, y, game_state))
+    else:
+        features.append(determine_is_worth_to_move_crates(x, y, game_state, count_crates))
+
+    if count_enemies == 0:
+        features.append(determine_crate_value(x, y, game_state))
+    else:
+        features.append(determine_is_worth_to_move_enemies(x, y, game_state, count_enemies))
+
+    return tuple(features)
