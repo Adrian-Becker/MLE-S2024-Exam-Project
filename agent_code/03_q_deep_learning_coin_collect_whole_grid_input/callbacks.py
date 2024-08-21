@@ -32,9 +32,9 @@ def setup(self):
             nn.ReLU(),
             nn.Linear(256, 512),
             nn.ReLU(),
-            nn.Linear(512, 256),
+            nn.Linear(512, 252),
             nn.ReLU(),
-            nn.Linear(256, 16),
+            nn.Linear(252, 16),
             nn.ReLU(),
             nn.Linear(16, len(ACTIONS))
         )

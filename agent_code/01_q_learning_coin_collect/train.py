@@ -70,11 +70,11 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
                   find_distance_to_coin(new_game_state['self'][3], field_new)
         reward -= 0.25
         #reward *= 0.25
-        if self.action == 'WAIT':
+        if self_action == 'WAIT':
             reward -= 0.5
 
     old_feature_index = state_to_index(old_game_state)
-    old_action = ACTION_TO_INDEX[self.action]
+    old_action = ACTION_TO_INDEX[self_action]
     new_feature_index = state_to_index(new_game_state)
     new_action = ACTION_TO_INDEX[determine_next_action(new_game_state, self.Q)]
 
