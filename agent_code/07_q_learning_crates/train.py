@@ -1,12 +1,13 @@
+import math
 import pickle
-import time
+import random
 from typing import List
 
 import numpy as np
 
 import events as e
 from .callbacks import state_to_features, find_distance_to_coin, ACTION_TO_INDEX, breadth_first_search, \
-    determine_next_action, prepare_field_coins, ACTION_INDICES
+    determine_next_action, prepare_field_coins, ACTION_INDICES, EPS_START, EPS_END, EPS_DECAY
 
 from .history import TransitionHistory, Transition
 
@@ -14,30 +15,39 @@ import tqdm
 
 # Hyper parameters -- DO modify
 TRANSITION_HISTORY_SIZE = 10000  # keep only ... last transitions
+
+TRANSITION_ENEMY_EPS_START = 0.999
+TRANSITION_ENEMY_EPS_END = 0.01
+TRANSITION_ENEMY_EPS_DECAY = 10000
+
 BATCH_SIZE = 128
 EPOCHS_PER_ROUND = 3
 
 # Events
 MOVED_TOWARDS_COIN_EVENT = "Moved Towards Coin"
 MOVED_AWAY_FROM_COIN_EVENT = "Moved Away from Coin"
+ESCAPE_BOMB_EVENT = "Escape Bomb"
 
 LEARNING_RATE = 0.1
-DISCOUNT_FACTOR = 0.95
+DISCOUNT_FACTOR = 0.99
 
 SYMMETRY_SYNC_RATE = 5
+
+ROUNDS_PER_SAVE = 100
 
 GAME_REWARDS = {
     e.COIN_COLLECTED: 100,
     e.KILLED_OPPONENT: 100,
     e.KILLED_SELF: -300,
     e.GOT_KILLED: -150,
-    e.INVALID_ACTION: -10,
-    e.WAITED: -5,
-    e.BOMB_DROPPED: 5,
-    e.CRATE_DESTROYED: 40,
-    e.COIN_FOUND: 20,
-    MOVED_TOWARDS_COIN_EVENT: 10,
-    MOVED_AWAY_FROM_COIN_EVENT: -7
+    e.INVALID_ACTION: -40,
+    e.WAITED: -20,
+    e.BOMB_DROPPED: 50,
+    e.CRATE_DESTROYED: 60,
+    e.COIN_FOUND: 50,
+    MOVED_TOWARDS_COIN_EVENT: 30,
+    MOVED_AWAY_FROM_COIN_EVENT: -30,
+    ESCAPE_BOMB_EVENT: 40
 }
 
 
@@ -52,10 +62,6 @@ def setup_training(self):
 
     self.transitions = TransitionHistory(TRANSITION_HISTORY_SIZE)
     self.round = 0
-
-    # def nop(it, *a, **k):
-    #    return it
-    # tqdm.tqdm = nop
 
 
 def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_state: dict, events: List[str]):
@@ -85,6 +91,10 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
             events.append(MOVED_TOWARDS_COIN_EVENT)
         elif distance_new > distance_old:
             events.append(MOVED_AWAY_FROM_COIN_EVENT)
+    if e.BOMB_DROPPED not in events:
+        if old_game_state['explosion_map'][old_game_state['self'][3]] > 0 and \
+                new_game_state['explosion_map'][new_game_state['self'][3]] == 0:
+            events.append(ESCAPE_BOMB_EVENT)
 
     rewards = reward_from_events(self, events)
 
@@ -95,6 +105,38 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
     self.transitions.append(Transition(features_old, action_old, features_new, rewards))
 
     self.iteration += 1
+
+
+def enemy_game_events_occurred(self, name, old_game_state, self_action, new_game_state, events):
+    return
+    random_prob = TRANSITION_ENEMY_EPS_END + (TRANSITION_ENEMY_EPS_START - TRANSITION_ENEMY_EPS_END) * \
+                  math.exp(-1. * self.iteration / TRANSITION_ENEMY_EPS_DECAY)
+    if self.train and random.random() > random_prob:
+        return
+
+    if old_game_state is None or self_action is None:
+        return
+
+    features_old = state_to_features(old_game_state)
+    action_old = ACTION_TO_INDEX[self_action]
+    features_new = state_to_features(new_game_state)
+    action_new = np.array(list(map(lambda action: self.Q[features_new][action], ACTION_INDICES))).argmax()
+
+    if e.COIN_COLLECTED not in events:
+        # no coin collected => agent might have moved closer to coin
+        distance_old = breadth_first_search(old_game_state['self'][3], *prepare_field_coins(old_game_state))
+        distance_new = breadth_first_search(new_game_state['self'][3], *prepare_field_coins(new_game_state))
+        if distance_old > distance_new:
+            events.append(MOVED_TOWARDS_COIN_EVENT)
+        elif distance_new > distance_old:
+            events.append(MOVED_AWAY_FROM_COIN_EVENT)
+
+    rewards = reward_from_events(self, events)
+
+    self.Q[features_old][action_old] += LEARNING_RATE * (
+            rewards + DISCOUNT_FACTOR * self.Q[features_new][action_new] - self.Q[features_old][action_old])
+
+    self.transitions.append(Transition(features_old, action_old, features_new, rewards))
 
 
 def optimize(self):
@@ -196,6 +238,7 @@ def sync_symmetries(self):
                                                     index_current_square, coins, crate, enemy, action)] += value
     self.Q = new_Q
 
+
 def end_of_round(self, last_game_state: dict, last_action: str, events: List[str]):
     """
     Called at the end of the round, saves the current state of the Q-table so that it can be restored after training.
@@ -207,10 +250,6 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
                    (2, 2, 2, 2, 1, 4, 4, 4), reward_from_events(self, events))
     )
 
-    # Store the model
-    with open("q-table_no_history.pt", "wb") as file:
-        pickle.dump(self.Q, file)
-
     for _ in range(EPOCHS_PER_ROUND):
         optimize(self)
     self.iteration += 1
@@ -218,6 +257,17 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
 
     if self.round % SYMMETRY_SYNC_RATE == 0:
         sync_symmetries(self)
+
+    if self.round % ROUNDS_PER_SAVE == 0:
+        # Store the model
+        with open("q-table_no_history.pt", "wb") as file:
+            pickle.dump(self.Q, file)
+
+    prob_enemy_copy = TRANSITION_ENEMY_EPS_END + (TRANSITION_ENEMY_EPS_START - TRANSITION_ENEMY_EPS_END) * \
+                      math.exp(-1. * self.iteration / TRANSITION_ENEMY_EPS_DECAY)
+    prob_exploration = EPS_END + (EPS_START - EPS_END) * math.exp(-1. * self.iteration / EPS_DECAY)
+    print(
+        f"Final points = {last_game_state['self'][1]}; probability (enemy) = {prob_enemy_copy}; probability (exploration) = {prob_exploration}")
 
 
 def reward_from_events(self, events: List[str]) -> int:

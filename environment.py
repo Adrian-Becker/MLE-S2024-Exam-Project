@@ -18,7 +18,9 @@ from fallbacks import pygame
 from items import Coin, Explosion, Bomb
 
 WorldArgs = namedtuple("WorldArgs",
-                       ["no_gui", "fps", "turn_based", "update_interval", "save_replay", "replay", "make_video", "continue_without_training", "log_dir", "save_stats", "match_name", "seed", "silence_errors", "scenario"])
+                       ["no_gui", "fps", "turn_based", "update_interval", "save_replay", "replay", "make_video",
+                        "continue_without_training", "log_dir", "save_stats", "match_name", "seed", "silence_errors",
+                        "scenario"])
 
 
 class Trophy:
@@ -445,9 +447,10 @@ class BombeRLeWorld(GenericWorld):
                     think_time = float("inf")
 
                 self.logger.info(f'Agent <{a.name}> chose action {action} in {think_time:.2f}s.')
-                if False: #think_time > a.available_think_time:
+                if False:  # think_time > a.available_think_time:
                     next_think_time = a.base_timeout - (think_time - a.available_think_time)
-                    self.logger.warning(f'Agent <{a.name}> exceeded think time by {think_time - a.available_think_time:.2f}s. Setting action to "WAIT" and decreasing available time for next round to {next_think_time:.2f}s.')
+                    self.logger.warning(
+                        f'Agent <{a.name}> exceeded think time by {think_time - a.available_think_time:.2f}s. Setting action to "WAIT" and decreasing available time for next round to {next_think_time:.2f}s.')
                     action = "WAIT"
                     a.trophies.append(Trophy.time_trophy)
                     a.available_think_time = next_think_time
@@ -470,16 +473,14 @@ class BombeRLeWorld(GenericWorld):
                     a.process_game_events(self.get_state_for_agent(a))
                 for enemy in self.active_agents:
                     if enemy is not a:
-                        pass
-                        # a.process_enemy_game_events(self.get_state_for_agent(enemy), enemy)
+                        a.process_enemy_game_events(self.get_state_for_agent(enemy), enemy)
         for a in self.agents:
             if a.train:
                 if not a.dead:
                     a.wait_for_game_event_processing()
                 for enemy in self.active_agents:
                     if enemy is not a:
-                        pass
-                        # a.wait_for_enemy_game_event_processing()
+                        a.wait_for_enemy_game_event_processing()
 
     def end_round(self):
         super().end_round()
@@ -643,7 +644,9 @@ class GUI:
         PARAMS = {
             ".mp4": ['-preset', 'veryslow', '-tune', 'animation', '-crf', '5', '-c:v', 'libx264',
                      '-pix_fmt', 'yuv420p'],
-            ".webm": ['-threads', '2', '-tile-columns', '2', '-frame-parallel', '0', '-g', '100', '-speed', '1', '-pix_fmt', 'yuv420p', '-qmin', '0', '-qmax', '10', '-crf', '5', '-b:v', '2M', '-c:v', 'libvpx-vp9', ]
+            ".webm": ['-threads', '2', '-tile-columns', '2', '-frame-parallel', '0', '-g', '100', '-speed', '1',
+                      '-pix_fmt', 'yuv420p', '-qmin', '0', '-qmax', '10', '-crf', '5', '-b:v', '2M', '-c:v',
+                      'libvpx-vp9', ]
         }
 
         for video_file in files:
