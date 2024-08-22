@@ -382,8 +382,8 @@ def reward_from_events(self, events: List[str]) -> int:
         e.KILLED_OPPONENT: 5000,
         e.KILLED_SELF: -500,
         e.GOT_KILLED: -400,
-        e.INVALID_ACTION: -100,
-        e.WAITED: -20,
+        e.INVALID_ACTION: -200,
+        e.WAITED: -100,
         e.BOMB_DROPPED: BOMB_EPS_END + (BOMB_EPS_START - BOMB_EPS_END) * math.exp(
             -1. * self.iteration / BOMB_EPS_DECAY),
         e.CRATE_DESTROYED: 200,

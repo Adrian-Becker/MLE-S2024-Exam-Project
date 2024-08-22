@@ -52,15 +52,13 @@ def setup(self):
     :param self: This object is passed to all callbacks and you can set arbitrary values.
     """
     self.iteration = 0
-    if self.train or not os.path.isfile("q-table_no_history.pt"):
+    if self.train or not os.path.isfile("q-table.pt"):
         self.logger.info("Setting up model from scratch.")
-        self.Q = np.zeros(FEATURE_SHAPE).astype(np.float32)
+        self.Q = np.zeros(FEATURE_SHAPE).astype(np.float64)
     else:
         self.logger.info("Loading model from saved state.")
-        with open("q-table_no_history.pt", "rb") as file:
+        with open("q-table.pt", "rb") as file:
             self.Q = pickle.load(file)
-        with np.printoptions(threshold=np.inf):
-            print(self.Q)
 
 
 def determine_next_action(game_state: dict, Q) -> str:
@@ -491,9 +489,6 @@ def determine_current_square(x, y, game_state: dict, count):
             mark_bomb(game_state['field'], escape_info[2], 3, (x, y), True)
 
             if find_shortest_escape_path((x, y), *escape_info, True) < math.inf:
-                # print('found safe escape')
-                # print(explosion_times)
-
                 if count == 1:
                     # can destroy one
                     return 2
