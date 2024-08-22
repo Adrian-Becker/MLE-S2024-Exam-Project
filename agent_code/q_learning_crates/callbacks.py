@@ -38,12 +38,12 @@ enemies: 0-3;4, 2^4=16 (UP, DOWN, LEFT, RIGHT) 								                         
 
 = 40500
 """
-FEATURE_SHAPE = (3, 3, 3, 3, 4, 5, 5, 5, len(ACTIONS))
-# FEATURE_SHAPE = (3, 3, 3, 3, 5, len(ACTIONS))
+# FEATURE_SHAPE = (3, 3, 3, 3, 4, 5, 5, 5, len(ACTIONS))
+FEATURE_SHAPE = (5, 4, 5, 5, 5, len(ACTIONS))
 
 EPS_START = 0.999
 EPS_END = 0.01
-EPS_DECAY = 1000
+EPS_DECAY = 50000
 
 
 def setup(self):
@@ -142,12 +142,13 @@ def breadth_first_search(position, field, targets):
     return math.inf
 
 
-def prepare_field_coins(game_state: dict):
+def prepare_field_coins(game_state: dict, explosion_timer):
     field = np.abs(game_state['field'])
     explosion_map = game_state['explosion_map']
     field += explosion_map.astype(int)
     for other in game_state['others']:
         field[other[3]] = 1
+    field[explosion_timer != 1000] += 1
 
     targets = np.zeros_like(field)
     for coin in game_state['coins']:
@@ -170,41 +171,49 @@ def determine_best_direction(x, y, field, targets):
     return choice
 
 
-def determine_coin_value(x, y, game_state: dict):
-    field, targets = prepare_field_coins(game_state)
+def determine_coin_value(x, y, game_state: dict, explosion_timer):
+    field, targets = prepare_field_coins(game_state, explosion_timer)
 
     return determine_best_direction(x, y, field, targets)
 
 
-def count_destroyable_crates(x, y, game_state: dict):
+def count_destroyable_crates(x, y, game_state: dict, explosion_timer):
     count_crates = 0
     field = game_state['field']
 
     for dx in range(1, min(4, 17 - x)):
         if field[x + dx, y] == -1:
             break
+        if explosion_timer[x + dx, y] != 1000:
+            continue
         if field[x + dx, y] == 1:
             count_crates += 1
     for dx in range(1, min(4, x + 1)):
         if field[x - dx, y] == -1:
             break
+        if explosion_timer[x - dx, y] != 1000:
+            continue
         if field[x - dx, y] == 1:
             count_crates += 1
     for dy in range(1, min(4, 17 - y)):
         if field[x, y + dy] == -1:
             break
+        if explosion_timer[x, y + dy] != 1000:
+            continue
         if field[x, y + dy] == 1:
             count_crates += 1
     for dy in range(1, min(4, y + 1)):
         if field[x, y - dy] == -1:
             break
+        if explosion_timer[x, y - dy] != 1000:
+            continue
         if field[x, y - dy] == 1:
             count_crates += 1
 
     return count_crates
 
 
-def count_destroyable_enemies(x, y, game_state: dict):
+def count_destroyable_enemies(x, y, game_state: dict, explosion_timer):
     count_enemies = 0
     field = game_state['field']
 
@@ -238,7 +247,7 @@ def count_destroyable_enemies(x, y, game_state: dict):
     return count_enemies
 
 
-def count_destroyable_crates_and_enemies(x, y, game_state: dict):
+def count_destroyable_crates_and_enemies(x, y, game_state: dict, explosion_timer):
     count_crates = 0
     count_enemies = 0
     field = game_state['field']
@@ -249,31 +258,39 @@ def count_destroyable_crates_and_enemies(x, y, game_state: dict):
     for dx in range(1, min(4, 17 - x)):
         if field[x + dx, y] == -1:
             break
-        if field[x + dx, y] == 1:
-            count_crates += 1
         if field[x + dx, y] == 2:
             count_enemies += 1
+        if explosion_timer[x + dx, y] != 1000:
+            continue
+        if field[x + dx, y] == 1:
+            count_crates += 1
     for dx in range(1, min(4, x + 1)):
         if field[x - dx, y] == -1:
             break
-        if field[x - dx, y] == 1:
-            count_crates += 1
         if field[x - dx, y] == 2:
             count_enemies += 1
+        if explosion_timer[x - dx, y] != 1000:
+            continue
+        if field[x - dx, y] == 1:
+            count_crates += 1
     for dy in range(1, min(4, 17 - y)):
         if field[x, y + dy] == -1:
             break
-        if field[x, y + dy] == 1:
-            count_crates += 1
         if field[x, y + dy] == 2:
             count_enemies += 1
+        if explosion_timer[x, y + dy] != 1000:
+            continue
+        if field[x, y + dy] == 1:
+            count_crates += 1
     for dy in range(1, min(4, y + 1)):
         if field[x, y - dy] == -1:
             break
-        if field[x, y - dy] == 1:
-            count_crates += 1
         if field[x, y - dy] == 2:
             count_enemies += 1
+        if explosion_timer[x, y - dy] != 1000:
+            continue
+        if field[x, y - dy] == 1:
+            count_crates += 1
 
     for other in game_state['others']:
         field[other[3]] = 0
@@ -284,29 +301,37 @@ def count_destroyable_crates_and_enemies(x, y, game_state: dict):
 def determine_field_state(x, y, prepped_field, explosion_map):
     if prepped_field[x, y] > 0:
         return 2
-    if explosion_map[x, y] > 1:
+    if 0 < explosion_map[x, y] < 1000:
         return 1
-    if explosion_map[x, y] == 1:
+    if explosion_map[x, y] == 0:
         return 2
     return 0
 
 
-def find_shortest_escape_path(position, field, explosion_time):
-    if field[position] != 0:
+def is_explosion_time_save(time):
+    return time < -1 or time > 0
+
+
+def find_shortest_escape_path(position, field, bomb_field, explosion_time, ignore_starting_square=False):
+    if (field[position] != 0 or bomb_field[position] != 1000) and not ignore_starting_square:
         return math.inf
 
     todo = [position]
-    distances = {position: 0}
+    distances = {position: -1 if ignore_starting_square else 0}
 
     while len(todo) > 0:
+        if ignore_starting_square:
+            pass
         current = todo.pop(0)
 
-        if explosion_time[current] - distances[current] <= 0:
+        if explosion_time[current] == 1000 or explosion_time[current] - distances[current] < -1:
             return distances[current]
 
         x, y = current
         neighbors = [(x, y) for (x, y) in [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)]
-                     if field[x, y] == 0 or (field[x, y] == 1 and explosion_time[current] - distances[current] <= 0)]
+                     if ((field[x, y] == 0 and is_explosion_time_save(explosion_time[x, y] - distances[current] - 1))
+                         or (field[x, y] == 1 and explosion_time[x, y] - distances[current] - 1 < -1)) and
+                     (bomb_field[x, y] == 1000 or bomb_field[x, y] - distances[current] - 1 < -1)]
         for neighbor in neighbors:
             if neighbor not in distances:
                 distances[neighbor] = distances[current] + 1
@@ -315,97 +340,152 @@ def find_shortest_escape_path(position, field, explosion_time):
     return math.inf
 
 
-def determine_neighbor_fields(x, y, game_state: dict):
+def mark_bomb(field, target_field, value, position, only_decrease=False):
+    directions = [
+        [(1, 0), (2, 0), (3, 0)],
+        [(-1, 0), (-2, 0), (-3, 0)],
+        [(0, 1), (0, 2), (0, 3)],
+        [(0, -1), (0, -2), (0, -3)]
+    ]
+
+    x, y = position
+
+    if only_decrease:
+        target_field[x, y] = min(target_field[x, y], value)
+    else:
+        target_field[x, y] = value
+
+    for direction in directions:
+        for delta in direction:
+            cx = x + delta[0]
+            cy = y + delta[1]
+            if cx < 0 or cy < 0 or cx >= 17 or cy >= 17:
+                break
+            # stone wall, bomb doesn't pass through
+            if field[cx, cy] == -1:
+                break
+            if only_decrease:
+                target_field[cx, cy] = min(target_field[cx, cy], value)
+            else:
+                target_field[cx, cy] = value
+
+
+def prepare_escape_path_fields(game_state: dict):
+    field = np.copy(game_state['field'])
+    for other in game_state['others']:
+        # mark other players as crates
+        field[other[3]] = 1
+    # values > 0 or values < -1 are save
+    explosion_timer = np.ones_like(field) * 1000
+    bomb_field = np.ones_like(field) * 1000
+    for bomb in game_state['bombs']:
+        bomb_field[bomb[0]] = bomb[1]
+        mark_bomb(game_state['field'], explosion_timer, bomb[1], bomb[0], True)
+    explosion_timer[game_state['explosion_map'] == 1] = -1
+    return field, bomb_field, explosion_timer
+
+
+def determine_neighbor_fields(x, y, game_state: dict, explosion_timer):
     field = np.abs(game_state['field'])
     for other in game_state['others']:
         field[other[3]] = 1
     explosion_map = game_state['explosion_map'].astype(int)
+    for bomb in game_state['bombs']:
+        field[bomb[0]] = 1
+    field[explosion_map == 1] = 1
 
-    explosion_time = explosion_map[x, y]
-
-    moves = [
-        determine_field_state(x, y - 1, field, explosion_map),
-        determine_field_state(x, y + 1, field, explosion_map),
-        determine_field_state(x - 1, y, field, explosion_map),
-        determine_field_state(x + 1, y, field, explosion_map)
-    ]
-    if explosion_time == 0 or 0 in moves:
-        return moves
-    distances = np.array([
-        find_shortest_escape_path((x, y - 1), field, explosion_map),
-        find_shortest_escape_path((x, y + 1), field, explosion_map),
-        find_shortest_escape_path((x - 1, y), field, explosion_map),
-        find_shortest_escape_path((x + 1, y), field, explosion_map),
+    moves = np.array([
+        determine_field_state(x, y - 1, field, explosion_timer),
+        determine_field_state(x, y + 1, field, explosion_timer),
+        determine_field_state(x - 1, y, field, explosion_timer),
+        determine_field_state(x + 1, y, field, explosion_timer)
     ])
-    min_distance = distances.min()
-    if min_distance < math.inf:
-        for i in range(4):
-            if distances[i] == min_distance:
-                moves[i] = 0
-    return moves
+    if explosion_timer[x, y] == 1000 or 0 in moves:
+        minimum = moves.min()
+        if minimum == 2:
+            return 4
+        return np.random.choice(np.flatnonzero(moves == minimum))
+        # return moves
+
+    bomb_input = prepare_escape_path_fields(game_state)
+    distances = np.array([
+        find_shortest_escape_path((x, y - 1), *bomb_input),
+        find_shortest_escape_path((x, y + 1), *bomb_input),
+        find_shortest_escape_path((x - 1, y), *bomb_input),
+        find_shortest_escape_path((x + 1, y), *bomb_input),
+    ])
+    # min_distance = distances.min()
+    # if min_distance < math.inf:
+    #    for i in range(4):
+    #        if distances[i] == min_distance:
+    #            moves[i] = 0
+    # return moves
+    minimum = distances.min()
+    if minimum < 100:
+        return np.random.choice(np.flatnonzero(distances == minimum))
+    minimum = moves.min()
+    if minimum == 2:
+        return 4
+    return np.random.choice(np.flatnonzero(moves == minimum))
 
 
-def determine_crate_value(x, y, game_state: dict):
-    field = np.clip(game_state['field'], 0, 1)
+def determine_crate_value(x, y, game_state: dict, explosion_timer):
+    field = np.clip(game_state['field'], -1, 1) * -1
     for other in game_state['others']:
         field[other[3]] = 1
     field += game_state['explosion_map'].astype(int)
+    field[explosion_timer != 1000] += 1
     field = np.clip(field, 0, 1)
 
-    targets = np.abs(np.clip(game_state['field'], -1, 0))
+    targets = np.abs(np.clip(game_state['field'], 0, 1))
 
     return determine_best_direction(x, y, field, targets)
 
 
-def determine_crate_value(x, y, game_state: dict):
+def determine_enemy_value(x, y, game_state: dict, explosion_timer):
     field = np.abs(game_state['field'])
     field += game_state['explosion_map'].astype(int)
+    field[explosion_timer != 1000] += 1
 
     targets = np.zeros_like(field)
     for other in game_state['others']:
         targets[other[3]] = 1
 
-    return determine_best_direction(x, y, field, targets)
+    return determine_best_direction(x, y, np.clip(field, 0, 1), targets)
 
 
-def determine_is_worth_to_move_crates(x, y, game_state: dict, count_crates):
-    count_up = count_destroyable_crates(x, y - 1, game_state)
-    count_down = count_destroyable_crates(x, y + 1, game_state)
-    count_left = count_destroyable_crates(x - 1, y, game_state)
-    count_right = count_destroyable_crates(x + 1, y, game_state)
+def determine_is_worth_to_move_crates(x, y, game_state: dict, count_crates, explosion_timer):
+    count_up = count_destroyable_crates(x, y - 1, game_state, explosion_timer)
+    count_down = count_destroyable_crates(x, y + 1, game_state, explosion_timer)
+    count_left = count_destroyable_crates(x - 1, y, game_state, explosion_timer)
+    count_right = count_destroyable_crates(x + 1, y, game_state, explosion_timer)
 
-    counts = np.array([count_up, count_down, count_left, count_right, count_crates])
+    counts = np.array([count_up, count_down, count_left, count_right, count_crates + 1])
     return np.random.choice(np.flatnonzero(counts == counts.max()))
 
 
-def determine_is_worth_to_move_enemies(x, y, game_state: dict, count_enemies):
-    count_up = count_destroyable_enemies(x, y - 1, game_state)
-    count_down = count_destroyable_enemies(x, y + 1, game_state)
-    count_left = count_destroyable_enemies(x - 1, y, game_state)
-    count_right = count_destroyable_enemies(x + 1, y, game_state)
+def determine_is_worth_to_move_enemies(x, y, game_state: dict, count_enemies, explosion_timer):
+    count_up = count_destroyable_enemies(x, y - 1, game_state, explosion_timer)
+    count_down = count_destroyable_enemies(x, y + 1, game_state, explosion_timer)
+    count_left = count_destroyable_enemies(x - 1, y, game_state, explosion_timer)
+    count_right = count_destroyable_enemies(x + 1, y, game_state, explosion_timer)
 
-    counts = np.array([count_up, count_down, count_left, count_right, count_enemies])
+    counts = np.array([count_up, count_down, count_left, count_right, count_enemies + 1])
     return np.random.choice(np.flatnonzero(counts == counts.max()))
 
 
 def determine_current_square(x, y, game_state: dict, count):
-    if game_state['explosion_map'][x, y] > 0:
+    escape_info = prepare_escape_path_fields(game_state)
+    if escape_info[2][x, y] != 1000:
         # is dangerous => we need to move
         return 1
     elif game_state['self'][2]:
         # can place bomb
         if count > 0:
             # worth placing bomb, check for escape path
-            explosion_times = np.copy(game_state['explosion_map'])
+            mark_bomb(game_state['field'], escape_info[2], 3, (x, y), True)
 
-            explosion_times[explosion_times == 0] = 10
-            for cx in range(max(0, x - 3), min(16, x + 4)):
-                explosion_times[cx, y] = min(explosion_times[cx, y], 3)
-            for cy in range(max(0, y - 3), min(16, y + 4)):
-                explosion_times[x, cy] = min(explosion_times[x, cy], 3)
-            explosion_times[explosion_times == 10] = 0
-
-            if find_shortest_escape_path((x, y), game_state['field'], explosion_times) < math.inf:
+            if find_shortest_escape_path((x, y), *escape_info, True) < math.inf:
                 # print('found safe escape')
                 # print(explosion_times)
 
@@ -416,6 +496,13 @@ def determine_current_square(x, y, game_state: dict, count):
                     # can destroy multiple
                     return 3
     return 0
+
+
+def determine_explosion_timer(game_state: dict):
+    explosion_timer = np.ones_like(game_state['field']) * 1000
+    for bomb in game_state['bombs']:
+        mark_bomb(game_state['field'], explosion_timer, bomb[1], bomb[0], True)
+    return explosion_timer
 
 
 def state_to_features(game_state: dict) -> np.array:
@@ -436,36 +523,30 @@ def state_to_features(game_state: dict) -> np.array:
     if game_state is None:
         return None
 
-    game_state['explosion_map'] = game_state['explosion_map'].astype(int)
-    game_state['explosion_map'] = np.ones_like(game_state['explosion_map']) * 10
-    for bomb in game_state['bombs']:
-        for x in range(max(0, bomb[0][0] - 3), min(16, bomb[0][0] + 4)):
-            game_state['explosion_map'][x, bomb[0][1]] = min(game_state['explosion_map'][x, bomb[0][1]], bomb[1])
-        for y in range(max(0, bomb[0][1] - 3), min(16, bomb[0][1] + 4)):
-            game_state['explosion_map'][bomb[0][0], y] = min(game_state['explosion_map'][bomb[0][0], y], bomb[1])
-    game_state['explosion_map'][game_state['explosion_map'] == 10] = 0
-
     # For example, you could construct several channels of equal shape, ...
     position = game_state['self'][3]
     x, y = position
 
-    features = []
-    features.extend(determine_neighbor_fields(x, y, game_state))
+    explosion_timer = determine_explosion_timer(game_state)
 
-    count_crates, count_enemies = count_destroyable_crates_and_enemies(x, y, game_state)
+    features = []
+    # features.extend(determine_neighbor_fields(x, y, game_state, explosion_timer))
+    features.append(determine_neighbor_fields(x, y, game_state, explosion_timer))
+
+    count_crates, count_enemies = count_destroyable_crates_and_enemies(x, y, game_state, explosion_timer)
 
     features.append(determine_current_square(x, y, game_state, count_crates + count_enemies))
 
-    features.append(determine_coin_value(x, y, game_state))
+    features.append(determine_coin_value(x, y, game_state, explosion_timer))
 
     if count_crates == 0:
-        features.append(determine_crate_value(x, y, game_state))
+        features.append(determine_crate_value(x, y, game_state, explosion_timer))
     else:
-        features.append(determine_is_worth_to_move_crates(x, y, game_state, count_crates))
+        features.append(determine_is_worth_to_move_crates(x, y, game_state, count_crates, explosion_timer))
 
     if count_enemies == 0:
-        features.append(determine_crate_value(x, y, game_state))
+        features.append(determine_enemy_value(x, y, game_state, explosion_timer))
     else:
-        features.append(determine_is_worth_to_move_enemies(x, y, game_state, count_enemies))
+        features.append(determine_is_worth_to_move_enemies(x, y, game_state, count_enemies, explosion_timer))
 
     return tuple(features)

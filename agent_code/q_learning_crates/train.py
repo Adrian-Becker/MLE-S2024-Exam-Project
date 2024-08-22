@@ -1,13 +1,14 @@
 import math
 import pickle
 import random
+from collections import deque
 from typing import List
 
 import numpy as np
 
 import events as e
 from .callbacks import state_to_features, find_distance_to_coin, ACTION_TO_INDEX, breadth_first_search, \
-    determine_next_action, prepare_field_coins, ACTION_INDICES, EPS_START, EPS_END, EPS_DECAY
+    determine_next_action, prepare_field_coins, ACTION_INDICES, EPS_START, EPS_END, EPS_DECAY, determine_explosion_timer
 
 from .history import TransitionHistory, Transition
 
@@ -61,6 +62,7 @@ def setup_training(self):
     """
 
     self.transitions = TransitionHistory(TRANSITION_HISTORY_SIZE)
+    self.point_history = deque([0], maxlen=100)
     self.round = 0
 
 
@@ -85,8 +87,13 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
 
     if e.COIN_COLLECTED not in events:
         # no coin collected => agent might have moved closer to coin
-        distance_old = breadth_first_search(old_game_state['self'][3], *prepare_field_coins(old_game_state))
-        distance_new = breadth_first_search(new_game_state['self'][3], *prepare_field_coins(new_game_state))
+        distance_old = breadth_first_search(
+            old_game_state['self'][3],
+            *prepare_field_coins(old_game_state, determine_explosion_timer(old_game_state)))
+        distance_new = breadth_first_search(
+            new_game_state['self'][3],
+            *prepare_field_coins(new_game_state, determine_explosion_timer(new_game_state)))
+
         if distance_old > distance_new:
             events.append(MOVED_TOWARDS_COIN_EVENT)
         elif distance_new > distance_old:
@@ -124,8 +131,13 @@ def enemy_game_events_occurred(self, name, old_game_state, self_action, new_game
 
     if e.COIN_COLLECTED not in events:
         # no coin collected => agent might have moved closer to coin
-        distance_old = breadth_first_search(old_game_state['self'][3], *prepare_field_coins(old_game_state))
-        distance_new = breadth_first_search(new_game_state['self'][3], *prepare_field_coins(new_game_state))
+        distance_old = breadth_first_search(
+            old_game_state['self'][3],
+            *prepare_field_coins(old_game_state, determine_explosion_timer(old_game_state)))
+        distance_new = breadth_first_search(
+            new_game_state['self'][3],
+            *prepare_field_coins(new_game_state, determine_explosion_timer(new_game_state)))
+
         if distance_old > distance_new:
             events.append(MOVED_TOWARDS_COIN_EVENT)
         elif distance_new > distance_old:
@@ -212,7 +224,7 @@ def transmute_neighbors(conversion, indices):
     return tuple(new)
 
 
-def sync_symmetries(self):
+def old_sync_symmetries(self):
     Q = self.Q
     new_Q = np.zeros_like(Q)
 
@@ -239,15 +251,41 @@ def sync_symmetries(self):
     self.Q = new_Q
 
 
+def sync_symmetries(self):
+    Q = self.Q
+    new_Q = np.zeros_like(Q)
+
+    for field in range(0, 5):
+        for index_current_square in range(0, 4):
+            for index_coins in range(0, 5):
+                for index_crate in range(0, 5):
+                    for index_enemy in range(0, 5):
+                        for action in ACTION_INDICES:
+                            value = Q[(
+                                field, index_current_square, index_coins, index_crate, index_enemy, action)] / 6.0
+                            for conversion in CONVERSIONS:
+                                neighbor_fields = conversion[field]
+                                coins = conversion[index_coins]
+                                crate = conversion[index_crate]
+                                enemy = conversion[index_enemy]
+                                new_Q[(neighbor_fields, index_current_square, coins, crate, enemy, action)] += value
+    self.Q = new_Q
+
+
 def end_of_round(self, last_game_state: dict, last_action: str, events: List[str]):
     """
     Called at the end of the round, saves the current state of the Q-table so that it can be restored after training.
     """
     self.logger.debug(f'Encountered event(s) {", ".join(map(repr, events))} in final step')
+    # self.transitions.append(
+    #    Transition(state_to_features(last_game_state),
+    #               ACTION_TO_INDEX[last_action],
+    #               (2, 2, 2, 2, 1, 4, 4, 4), reward_from_events(self, events))
+    # )
     self.transitions.append(
         Transition(state_to_features(last_game_state),
                    ACTION_TO_INDEX[last_action],
-                   (2, 2, 2, 2, 1, 4, 4, 4), reward_from_events(self, events))
+                   (4, 3, 4, 4, 4), reward_from_events(self, events))
     )
 
     for _ in range(EPOCHS_PER_ROUND):
@@ -257,6 +295,7 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
 
     if self.round % SYMMETRY_SYNC_RATE == 0:
         sync_symmetries(self)
+        pass
 
     if self.round % ROUNDS_PER_SAVE == 0:
         # Store the model
@@ -266,8 +305,16 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     prob_enemy_copy = TRANSITION_ENEMY_EPS_END + (TRANSITION_ENEMY_EPS_START - TRANSITION_ENEMY_EPS_END) * \
                       math.exp(-1. * self.iteration / TRANSITION_ENEMY_EPS_DECAY)
     prob_exploration = EPS_END + (EPS_START - EPS_END) * math.exp(-1. * self.iteration / EPS_DECAY)
+
+    prob_enemy_copy = str(round(prob_enemy_copy * 100, 2))
+    prob_exploration = str(round(prob_exploration * 100, 2))
+
+    points = last_game_state['self'][1]
+    self.point_history.append(points)
+
+    avg_points = str(round(sum(list(self.point_history)) / len(self.point_history), 2))
     print(
-        f"Final points = {last_game_state['self'][1]}; probability (enemy) = {prob_enemy_copy}; probability (exploration) = {prob_exploration}")
+        f"Round \033[93m\033[1m{self.round}\033[0m of 70000; avg_points=\033[92m\033[1m{avg_points}\033[0m; points=\033[92m{points}\033[0m; P(copy enemy)=\033[96m{prob_enemy_copy}%\033[0m; P(exploration)=\033[96m{prob_exploration}%\033[0m")
 
 
 def reward_from_events(self, events: List[str]) -> int:

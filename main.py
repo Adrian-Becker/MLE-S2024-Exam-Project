@@ -48,7 +48,8 @@ def world_controller(world, n_rounds, *,
             pygame.display.flip()
 
     user_input = None
-    for _ in tqdm(range(n_rounds)):
+    # for _ in tqdm(range(n_rounds)):
+    for _ in range(n_rounds):
         world.new_round()
         while world.running:
             # Only render when the last frame is not too old
