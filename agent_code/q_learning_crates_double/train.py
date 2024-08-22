@@ -325,7 +325,7 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     if self.round % ROUNDS_PER_SAVE == 0:
         # Store the model
         self.save += 1
-        with open("tables/" + "{:4d}".format(self.save) + "q-table.pt", "wb") as file:
+        with open("tables/" + "{:04d}".format(self.save) + "-q-table.pt", "wb") as file:
             pickle.dump(self.Q, file)
 
     prob_enemy_copy = TRANSITION_ENEMY_EPS_END + (TRANSITION_ENEMY_EPS_START - TRANSITION_ENEMY_EPS_END) * \
