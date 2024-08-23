@@ -41,7 +41,7 @@ enemies: 0-3;4, 2^4=16 (UP, DOWN, LEFT, RIGHT) 								                         
 = 40500
 """
 # FEATURE_SHAPE = (3, 3, 3, 3, 4, 5, 5, 5, len(ACTIONS))
-FEATURE_SHAPE = (4, 2, 2, 2, 2, 4, len(ACTIONS))
+FEATURE_SHAPE = (4, 2, 2, 2, 2, 4, 2, 2, 2, 2, len(ACTIONS))
 
 EPS_START = 0.2
 EPS_END = 0.05
@@ -572,17 +572,7 @@ def determine_trap_escape_direction(x, y, game_state: dict, bomb_input, danger_m
 
 
 def partially_fill(features, game_state, x, y, current_square, count_crates, count_enemies, explosion_timer,
-                   danger_map):
-    bomb_input = prepare_escape_path_fields(game_state)
-    if danger_map[(x, y)] <= TRAP_FLEEING_THRESHOLD:
-        directions = determine_trap_escape_direction(x, y, game_state, bomb_input, danger_map)
-        #print("FLEEING")
-        if directions.max() > 0:
-            #print("SUCCESS")
-            features.extend(directions)
-            features.append(0)
-            return features
-
+                   bomb_input):
     if current_square == 1:
         features.extend(determine_escape_direction(x, y, game_state, bomb_input))
         features.append(0)
@@ -729,13 +719,11 @@ def state_to_features(game_state: dict) -> np.array:
     current_square = determine_current_square(x, y, game_state, count_crates + count_enemies)
     features.append(current_square)
 
-    partially_fill(features, game_state, x, y, current_square, count_crates, count_enemies, explosion_timer, danger_map)
+    bomb_input = prepare_escape_path_fields(game_state)
+    partially_fill(features, game_state, x, y, current_square, count_crates, count_enemies, explosion_timer, bomb_input)
 
-    #positions = [(x, y - 1), (x, y + 1), (x - 1, y), (x + 1, y)]
-    #for i in range(1, 5):
-    #    if features[i] == 1:
-    #        features[i] = 3
-    #    # else:
-    ##    #    features[i] = determine_is_safe(game_state, positions[i])
+    positions = [(x, y - 1), (x, y + 1), (x - 1, y), (x + 1, y)]
+    for dposition in positions:
+        features.append(1 if danger_map[dposition] >= danger_map[position] else 0)
 
     return tuple(features)

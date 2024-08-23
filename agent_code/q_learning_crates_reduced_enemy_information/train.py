@@ -291,13 +291,22 @@ def sync_symmetries(Q):
                 for f3 in range(0, 2):
                     for f4 in range(0, 2):
                         for mode in range(0, 4):
-                            for action in ACTION_INDICES:
-                                value = 0
-                                neighbor_fields = (f1, f2, f3, f4)
-                                for conversion in CONVERSIONS:
-                                    converted_neighbor_fields = transmute_neighbors(conversion, neighbor_fields)
-                                    value += Q[current_field][converted_neighbor_fields][(mode, conversion[action])]
-                                new_Q[current_field][neighbor_fields][(mode, action)] = value / 6.0
+                            for t1 in range(0, 2):
+                                for t2 in range(0, 2):
+                                    for t3 in range(0, 2):
+                                        for t4 in range(0, 2):
+                                            for action in ACTION_INDICES:
+                                                value = 0
+                                                neighbor_fields = (f1, f2, f3, f4)
+                                                trap_fields = (t1, t2, t3, t4)
+                                                for conversion in CONVERSIONS:
+                                                    converted_neighbor_fields = transmute_neighbors(conversion,
+                                                                                                    neighbor_fields)
+                                                    converted_trap_fields = transmute_neighbors(conversion, trap_fields)
+                                                    value += Q[current_field][converted_neighbor_fields][mode][
+                                                        converted_trap_fields][conversion[action]]
+                                                new_Q[current_field][neighbor_fields][mode][trap_fields][
+                                                    action] = value / 6.0
     return new_Q
 
 
@@ -311,10 +320,15 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     #               ACTION_TO_INDEX[last_action],
     #               (2, 2, 2, 2, 1, 4, 4, 4), reward_from_events(self, events))
     # )
+    # self.transitions.append(
+    #    Transition(state_to_features(last_game_state),
+    #               ACTION_TO_INDEX[last_action],
+    #               (0, 0, 0, 0, 0, 0), reward_from_events(self, events))
+    # )
     self.transitions.append(
         Transition(state_to_features(last_game_state),
                    ACTION_TO_INDEX[last_action],
-                   (0, 0, 0, 0, 0, 0), reward_from_events(self, events))
+                   (0, 0, 0, 0, 0, 0, 0, 0, 0, 0), reward_from_events(self, events))
     )
 
     for _ in range(EPOCHS_PER_ROUND):
