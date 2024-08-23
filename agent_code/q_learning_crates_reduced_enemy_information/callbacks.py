@@ -440,7 +440,8 @@ def determine_crate_value(x, y, game_state: dict, explosion_timer):
     field[explosion_timer != 1000] += 1
     field = np.clip(field, 0, 1)
 
-    targets = np.abs(np.clip(game_state['field'], 0, 1))
+    targets = np.clip(game_state['field'], 0, 1)
+    targets[explosion_timer != 1000] = 0
 
     return determine_best_direction(x, y, field, targets)
 
