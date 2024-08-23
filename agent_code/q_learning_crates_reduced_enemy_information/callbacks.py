@@ -15,6 +15,8 @@ ACTIONS_PROBABILITIES = [0.2, 0.2, 0.2, 0.2, 0.195, 0.005]
 WIDTH = 17
 HEIGHT = 17
 
+TRAP_FLEEING_THRESHOLD = 2
+
 """
 state vector: 
 neighbor fields:                                                                                        03^4 (=81)
@@ -104,7 +106,7 @@ def act(self, game_state: dict) -> str:
     action = ACTIONS[best_action_index]
     if not self.train:
         print(f"{action} {self.last_features}")
-        #print(self.Q[self.last_features])
+        # print(self.Q[self.last_features])
         pass
     return action
 
@@ -341,12 +343,13 @@ def is_explosion_time_save(time):
     return time < -1 or time > 0
 
 
-def find_shortest_escape_path(position, field, bomb_field, explosion_time, ignore_starting_square=False):
+def find_shortest_escape_path(position, field, bomb_field, explosion_time, ignore_starting_square=False,
+                              starting_distance=0):
     if (field[position] != 0 or bomb_field[position] != 1000) and not ignore_starting_square:
         return math.inf
 
     todo = [position]
-    distances = {position: -1 if ignore_starting_square else 0}
+    distances = {position: (-1 if ignore_starting_square else 0) + starting_distance}
 
     while len(todo) > 0:
         if ignore_starting_square:
@@ -414,8 +417,7 @@ def prepare_escape_path_fields(game_state: dict):
     return field, bomb_field, explosion_timer
 
 
-def determine_escape_direction(x, y, game_state: dict):
-    bomb_input = prepare_escape_path_fields(game_state)
+def determine_escape_direction(x, y, game_state: dict, bomb_input):
     distances = np.array([
         find_shortest_escape_path((x, y - 1), *bomb_input),
         find_shortest_escape_path((x, y + 1), *bomb_input),
@@ -529,6 +531,172 @@ def determine_explosion_timer(game_state: dict):
     return explosion_timer
 
 
+def find_escape_path_danger_map(position, field, bomb_field, explosion_time, danger_map, starting_time=0):
+    todo = [position]
+    distances = {position: starting_time}
+
+    while len(todo) > 0:
+        current = todo.pop(0)
+        if danger_map[current] - distances[current] <= 0:
+            continue
+
+        if (explosion_time[current] == 1000 or explosion_time[current] - distances[current] < -1) and \
+                danger_map[current] > 64:
+            return distances[current]
+
+        x, y = current
+        neighbors = [(x, y) for (x, y) in [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)]
+                     if ((field[x, y] == 0 and is_explosion_time_save(explosion_time[x, y] - distances[current] - 1))
+                         or (field[x, y] == 1 and explosion_time[x, y] - distances[current] - 1 < -1)) and
+                     (bomb_field[x, y] == 1000 or bomb_field[x, y] - distances[current] - 1 < -1)]
+        for neighbor in neighbors:
+            if neighbor not in distances:
+                distances[neighbor] = distances[current] + 1
+                todo.append(neighbor)
+    return math.inf
+
+
+def determine_trap_escape_direction(x, y, game_state: dict, bomb_input, danger_map):
+    distances = np.array([
+        find_escape_path_danger_map((x, y - 1), *bomb_input, danger_map, starting_time=1),
+        find_escape_path_danger_map((x, y + 1), *bomb_input, danger_map, starting_time=1),
+        find_escape_path_danger_map((x - 1, y), *bomb_input, danger_map, starting_time=1),
+        find_escape_path_danger_map((x + 1, y), *bomb_input, danger_map, starting_time=1),
+    ])
+    moves = np.array([0, 0, 0, 0])
+
+    min_distance = distances.min()
+    if min_distance < math.inf:
+        moves[distances == min_distance] = 1
+    return moves
+
+
+def partially_fill(features, game_state, x, y, current_square, count_crates, count_enemies, explosion_timer,
+                   danger_map):
+    bomb_input = prepare_escape_path_fields(game_state)
+    if danger_map[(x, y)] <= TRAP_FLEEING_THRESHOLD:
+        directions = determine_trap_escape_direction(x, y, game_state, bomb_input, danger_map)
+        #print("FLEEING")
+        if directions.max() > 0:
+            #print("SUCCESS")
+            features.extend(directions)
+            features.append(0)
+            return features
+
+    if current_square == 1:
+        features.extend(determine_escape_direction(x, y, game_state, bomb_input))
+        features.append(0)
+        return features
+
+    coins = determine_coin_value(x, y, game_state, explosion_timer)
+    if coins.max() > 0:
+        features.extend(coins)
+        features.append(1)
+        return features
+
+    if current_square > 1 and count_crates > 0:
+        features.extend(determine_is_worth_to_move_crates(x, y, game_state, count_crates, explosion_timer))
+        features.append(2)
+        return features
+
+    crates = determine_crate_value(x, y, game_state, explosion_timer)
+    if crates.max() > 0:
+        features.extend(crates)
+        features.append(2)
+        return features
+
+    if current_square > 1 and count_enemies > 0:
+        features.extend(determine_is_worth_to_move_enemies(x, y, game_state, count_enemies, explosion_timer))
+        features.append(3)
+        return features
+
+    enemies = determine_enemy_value(x, y, game_state, explosion_timer)
+    if enemies.max() > 0:
+        features.extend(enemies)
+        features.append(3)
+        return features
+
+    features.extend(determine_escape_direction(x, y, game_state, bomb_input))
+    features.append(0)
+    return features
+
+
+def fill_reachable_map(field, reachable_field, bomb_field, explosion_time, position, max_depth=5):
+    todo = [position]
+    distances = {position: -1}
+
+    while len(todo) > 0:
+        current = todo.pop(0)
+        if distances[current] + 1 == max_depth:
+            return
+
+        if reachable_field[current] < distances[current]:
+            continue
+        reachable_field[current] = distances[current]
+        x, y = current
+        neighbors = [(x, y) for (x, y) in [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)]
+                     if ((field[x, y] == 0 and is_explosion_time_save(explosion_time[x, y] - distances[current] - 1))
+                         or (field[x, y] == 1 and explosion_time[x, y] - distances[current] - 1 < -1)) and
+                     (bomb_field[x, y] == 1000 or bomb_field[x, y] - distances[current] - 1 < -1)]
+        for neighbor in neighbors:
+            if neighbor not in distances:
+                distances[neighbor] = distances[current] + 1
+                todo.append(neighbor)
+
+
+def compute_danger(position, field, time_value, danger_map, bomb_field, explosion_time):
+    bomb_field[position] = 3 + time_value + 1
+    explosion_time_adapted = np.copy(explosion_time)
+    mark_bomb(field, explosion_time_adapted, 3 + time_value + 1, position, True)
+
+    directions = [
+        [(1, 0), (2, 0), (3, 0)],
+        [(-1, 0), (-2, 0), (-3, 0)],
+        [(0, 1), (0, 2), (0, 3)],
+        [(0, -1), (0, -2), (0, -3)]
+    ]
+
+    x, y = position
+    for direction in directions:
+        for delta in direction:
+            cx = x + delta[0]
+            cy = y + delta[1]
+            if cx < 0 or cy < 0 or cx >= 17 or cy >= 17:
+                break
+            # stone wall, bomb doesn't pass through
+            if field[cx, cy] == -1:
+                break
+            if find_shortest_escape_path((cx, cy), field, bomb_field, explosion_time_adapted, True,
+                                         time_value + 2) > 64:
+                danger_map[cx, cy] = min(danger_map[cx, cy], time_value + 1)
+    bomb_field[position] = 1000
+
+
+def create_danger_map(game_state):
+    reachable_field = np.ones_like(game_state['field']) * 1000
+    field = game_state['field']
+    explosion_time = np.ones_like(field) * 1000
+    bomb_field = np.ones_like(field) * 1000
+    for bomb in game_state['bombs']:
+        bomb_field[bomb[0]] = bomb[1]
+        mark_bomb(game_state['field'], explosion_time, bomb[1], bomb[0], True)
+    explosion_time[game_state['explosion_map'] == 1] = -1
+    for other in game_state['others']:
+        fill_reachable_map(field, reachable_field, bomb_field, explosion_time, other[3])
+
+    danger_map = np.ones_like(game_state['field']) * 1000
+    for x in range(17):
+        for y in range(17):
+            if reachable_field[(x, y)] < 1000:
+                compute_danger((x, y), field, reachable_field[(x, y)], danger_map, bomb_field, explosion_time)
+
+    return danger_map
+
+
+def determine_is_safe(game_state, position):
+    pass
+
+
 def state_to_features(game_state: dict) -> np.array:
     """
     *This is not a required function, but an idea to structure your code.*
@@ -555,42 +723,19 @@ def state_to_features(game_state: dict) -> np.array:
 
     explosion_timer = determine_explosion_timer(game_state)
     count_crates, count_enemies = count_destroyable_crates_and_enemies(x, y, game_state, explosion_timer)
+
+    danger_map = create_danger_map(game_state)
+
     current_square = determine_current_square(x, y, game_state, count_crates + count_enemies)
     features.append(current_square)
 
-    if current_square == 1:
-        features.extend(determine_escape_direction(x, y, game_state))
-        features.append(0)
-        return tuple(features)
+    partially_fill(features, game_state, x, y, current_square, count_crates, count_enemies, explosion_timer, danger_map)
 
-    coins = determine_coin_value(x, y, game_state, explosion_timer)
-    if coins.max() > 0:
-        features.extend(coins)
-        features.append(1)
-        return tuple(features)
+    #positions = [(x, y - 1), (x, y + 1), (x - 1, y), (x + 1, y)]
+    #for i in range(1, 5):
+    #    if features[i] == 1:
+    #        features[i] = 3
+    #    # else:
+    ##    #    features[i] = determine_is_safe(game_state, positions[i])
 
-    if current_square > 1 and count_crates > 0:
-        features.extend(determine_is_worth_to_move_crates(x, y, game_state, count_crates, explosion_timer))
-        features.append(2)
-        return tuple(features)
-
-    crates = determine_crate_value(x, y, game_state, explosion_timer)
-    if crates.max() > 0:
-        features.extend(crates)
-        features.append(2)
-        return tuple(features)
-
-    if current_square > 1 and count_enemies > 0:
-        features.extend(determine_is_worth_to_move_enemies(x, y, game_state, count_enemies, explosion_timer))
-        features.append(3)
-        return tuple(features)
-
-    enemies = determine_enemy_value(x, y, game_state, explosion_timer)
-    if enemies.max() > 0:
-        features.extend(enemies)
-        features.append(3)
-        return tuple(features)
-
-    features.extend(determine_escape_direction(x, y, game_state))
-    features.append(0)
     return tuple(features)
