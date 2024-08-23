@@ -58,7 +58,16 @@ def setup(self):
         self.Q = np.zeros(FEATURE_SHAPE).astype(np.float64)
     else:
         self.logger.info("Loading model from saved state.")
-        with open("tables/0002-q-table.pt", "rb") as file:
+        files = os.listdir("tables")
+        highest_number = 0
+        file_prefix = "0001"
+        for file in files:
+            number = int(file[:4])
+            if number > highest_number:
+                highest_number = number
+                file_prefix = file[:4]
+
+        with open(f"tables/{file_prefix}-q-table.pt", "rb") as file:
             self.Q = pickle.load(file)
         with np.printoptions(threshold=np.inf):
             print(self.Q)
