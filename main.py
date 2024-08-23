@@ -2,6 +2,8 @@ import os
 from argparse import ArgumentParser
 from pathlib import Path
 from time import sleep, time
+
+import numpy as np
 from tqdm import tqdm
 
 import settings as s
@@ -30,11 +32,13 @@ class Timekeeper:
 
 
 def world_controller(world, n_rounds, *,
-                     gui, every_step, turn_based, make_video, update_interval):
+                     gui, every_step, turn_based, make_video, update_interval, benchmark):
     if make_video and not gui.screenshot_dir.exists():
         gui.screenshot_dir.mkdir()
 
     gui_timekeeper = Timekeeper(update_interval)
+
+    wins = np.zeros((len(world.agents)))
 
     def render(wait_until_due):
         # If every step should be displayed, wait until it is due to be shown
@@ -48,7 +52,7 @@ def world_controller(world, n_rounds, *,
             pygame.display.flip()
 
     user_input = None
-    # for _ in tqdm(range(n_rounds)):
+    #for _ in tqdm(range(n_rounds)):
     for _ in range(n_rounds):
         world.new_round()
         while world.running:
@@ -75,6 +79,16 @@ def world_controller(world, n_rounds, *,
                 # Might want to wait
                 pass
 
+        if benchmark:
+            max_score = 0
+            best_agent = 0
+            for i in range(len(world.agents)):
+                if max_score < world.agents[i].score:
+                    max_score = world.agents[i].score
+                    best_agent = i
+                print(world.agents[i].score)
+            wins[best_agent] += 1
+
         # Save video of last game
         if make_video:
             gui.make_video()
@@ -94,8 +108,12 @@ def world_controller(world, n_rounds, *,
 
     world.end()
 
+    if benchmark:
+        for i in range(len(world.agents)):
+            agent = world.agents[i]
+            print(agent.name + " has won " + "{:5.0f}".format(wins[i]) + " games!")
 
-def main(argv = None):
+def main(argv=None):
     parser = ArgumentParser()
 
     subparsers = parser.add_subparsers(dest='command_name', required=True)
@@ -104,7 +122,8 @@ def main(argv = None):
     play_parser = subparsers.add_parser("play")
     agent_group = play_parser.add_mutually_exclusive_group()
     agent_group.add_argument("--my-agent", type=str, help="Play agent of name ... against three rule_based_agents")
-    agent_group.add_argument("--agents", type=str, nargs="+", default=["rule_based_agent"] * s.MAX_AGENTS, help="Explicitly set the agent names in the game")
+    agent_group.add_argument("--agents", type=str, nargs="+", default=["rule_based_agent"] * s.MAX_AGENTS,
+                             help="Explicitly set the agent names in the game")
     play_parser.add_argument("--train", default=0, type=int, choices=[0, 1, 2, 3, 4],
                              help="First … agents should be set to training mode")
     play_parser.add_argument("--continue-without-training", default=False, action="store_true")
@@ -112,17 +131,22 @@ def main(argv = None):
 
     play_parser.add_argument("--scenario", default="classic", choices=s.SCENARIOS)
 
-    play_parser.add_argument("--seed", type=int, help="Reset the world's random number generator to a known number for reproducibility")
+    play_parser.add_argument("--seed", type=int,
+                             help="Reset the world's random number generator to a known number for reproducibility")
 
     play_parser.add_argument("--n-rounds", type=int, default=10, help="How many rounds to play")
-    play_parser.add_argument("--save-replay", const=True, default=False, action='store', nargs='?', help='Store the game as .pt for a replay')
+    play_parser.add_argument("--save-replay", const=True, default=False, action='store', nargs='?',
+                             help='Store the game as .pt for a replay')
     play_parser.add_argument("--match-name", help="Give the match a name")
 
     play_parser.add_argument("--silence-errors", default=False, action="store_true", help="Ignore errors from agents")
 
+    play_parser.add_argument("--benchmark", default=False, action="store_true")
+
     group = play_parser.add_mutually_exclusive_group()
     group.add_argument("--skip-frames", default=False, action="store_true", help="Play several steps per GUI render.")
-    group.add_argument("--no-gui", default=False, action="store_true", help="Deactivate the user interface and play as fast as possible.")
+    group.add_argument("--no-gui", default=False, action="store_true",
+                       help="Deactivate the user interface and play as fast as possible.")
 
     # Replay arguments
     replay_parser = subparsers.add_parser("replay")
@@ -135,7 +159,8 @@ def main(argv = None):
         sub.add_argument("--update-interval", type=float, default=0.1,
                          help="How often agents take steps (ignored without GUI)")
         sub.add_argument("--log-dir", default=os.path.dirname(os.path.abspath(__file__)) + "/logs")
-        sub.add_argument("--save-stats", const=True, default=False, action='store', nargs='?', help='Store the game results as .json for evaluation')
+        sub.add_argument("--save-stats", const=True, default=False, action='store', nargs='?',
+                         help='Store the game results as .json for evaluation')
 
         # Video?
         sub.add_argument("--make-video", const=True, default=False, action='store', nargs='?',
@@ -178,7 +203,8 @@ def main(argv = None):
         gui = None
     world_controller(world, args.n_rounds,
                      gui=gui, every_step=every_step, turn_based=args.turn_based,
-                     make_video=args.make_video, update_interval=args.update_interval)
+                     make_video=args.make_video, update_interval=args.update_interval,
+                     benchmark=args.benchmark)
 
 
 if __name__ == '__main__':

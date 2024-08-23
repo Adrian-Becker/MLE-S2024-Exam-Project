@@ -39,11 +39,11 @@ enemies: 0-3;4, 2^4=16 (UP, DOWN, LEFT, RIGHT) 								                         
 = 40500
 """
 # FEATURE_SHAPE = (3, 3, 3, 3, 4, 5, 5, 5, len(ACTIONS))
-FEATURE_SHAPE = (5, 4, 5, 5, 5, len(ACTIONS))
+FEATURE_SHAPE = (4, 2, 2, 2, 2, 4, len(ACTIONS))
 
-EPS_START = 0.05
-EPS_END = 0.001
-EPS_DECAY = 4500000
+EPS_START = 0.2
+EPS_END = 0.05
+EPS_DECAY = 40000
 
 
 def setup(self):
@@ -51,14 +51,17 @@ def setup(self):
     This is called once when loading each agent.
     :param self: This object is passed to all callbacks and you can set arbitrary values.
     """
-    self.iteration = 2890420
-    if self.train or not os.path.isfile("tables/nnnn-q-table.pt"):
+    self.iteration = 0
+    self.round = 0
+    if self.train or not os.path.isfile("tables/0001-q-table.pt"):
         self.logger.info("Setting up model from scratch.")
         self.Q = np.zeros(FEATURE_SHAPE).astype(np.float64)
     else:
         self.logger.info("Loading model from saved state.")
-        with open("tables/nnnnn-q-table.pt", "rb") as file:
+        with open("tables/0002-q-table.pt", "rb") as file:
             self.Q = pickle.load(file)
+        with np.printoptions(threshold=np.inf):
+            print(self.Q)
 
 
 def determine_next_action(game_state: dict, Q) -> str:
@@ -76,9 +79,9 @@ def act(self, game_state: dict) -> str:
     :return: The action to take as a string.
     """
     random_prob = EPS_END + (EPS_START - EPS_END) * math.exp(-1. * self.iteration / EPS_DECAY)
-    if self.train and random.random() < random_prob:
+    if self.train and random.random() < random_prob and self.round % 2 == 0:
         features = state_to_features(game_state)
-        if features[1] > 1 and random.random() < 0.5:
+        if features[0] > 1 and random.random() < 0.5:
             return 'BOMB'
         self.logger.debug("Choosing action purely at random.")
         self.last_features = features
@@ -88,7 +91,11 @@ def act(self, game_state: dict) -> str:
 
     self.last_features = state_to_features(game_state)
     best_action_index = np.array(list(map(lambda action: self.Q[self.last_features][action], ACTION_INDICES))).argmax()
-    return ACTIONS[best_action_index]
+    action = ACTIONS[best_action_index]
+    if not self.train:
+        print(f"{action} {self.last_features}")
+        pass
+    return action
 
 
 def find_distance_to_coin(position, field: np.array):
@@ -167,11 +174,11 @@ def determine_best_direction(x, y, field, targets):
     distance_right = breadth_first_search((x + 1, y), field, targets)
 
     distances = np.array([distance_up, distance_down, distance_left, distance_right])
-    choice = np.random.choice(np.flatnonzero(distances == distances.min()))
-
-    if distances[choice] > 64:
-        return 4
-    return choice
+    min_distance = distances.min()
+    directions = np.array([0, 0, 0, 0])
+    if min_distance < 64:
+        directions[distances == min_distance] = 1
+    return directions
 
 
 def determine_coin_value(x, y, game_state: dict, explosion_timer):
@@ -388,28 +395,7 @@ def prepare_escape_path_fields(game_state: dict):
     return field, bomb_field, explosion_timer
 
 
-def determine_neighbor_fields(x, y, game_state: dict, explosion_timer):
-    field = np.abs(game_state['field'])
-    for other in game_state['others']:
-        field[other[3]] = 1
-    explosion_map = game_state['explosion_map'].astype(int)
-    for bomb in game_state['bombs']:
-        field[bomb[0]] = 1
-    field[explosion_map == 1] = 1
-
-    moves = np.array([
-        determine_field_state(x, y - 1, field, explosion_timer),
-        determine_field_state(x, y + 1, field, explosion_timer),
-        determine_field_state(x - 1, y, field, explosion_timer),
-        determine_field_state(x + 1, y, field, explosion_timer)
-    ])
-    if explosion_timer[x, y] == 1000 or 0 in moves:
-        minimum = moves.min()
-        if minimum == 2:
-            return 4
-        return np.random.choice(np.flatnonzero(moves == minimum))
-        # return moves
-
+def determine_escape_direction(x, y, game_state: dict):
     bomb_input = prepare_escape_path_fields(game_state)
     distances = np.array([
         find_shortest_escape_path((x, y - 1), *bomb_input),
@@ -417,19 +403,12 @@ def determine_neighbor_fields(x, y, game_state: dict, explosion_timer):
         find_shortest_escape_path((x - 1, y), *bomb_input),
         find_shortest_escape_path((x + 1, y), *bomb_input),
     ])
-    # min_distance = distances.min()
-    # if min_distance < math.inf:
-    #    for i in range(4):
-    #        if distances[i] == min_distance:
-    #            moves[i] = 0
-    # return moves
-    minimum = distances.min()
-    if minimum < 100:
-        return np.random.choice(np.flatnonzero(distances == minimum))
-    minimum = moves.min()
-    if minimum == 2:
-        return 4
-    return np.random.choice(np.flatnonzero(moves == minimum))
+    moves = np.array([0, 0, 0, 0])
+
+    min_distance = distances.min()
+    if min_distance < math.inf:
+        moves[distances == min_distance] = 1
+    return moves
 
 
 def determine_crate_value(x, y, game_state: dict, explosion_timer):
@@ -463,8 +442,21 @@ def determine_is_worth_to_move_crates(x, y, game_state: dict, count_crates, expl
     count_left = count_destroyable_crates(x - 1, y, game_state, explosion_timer)
     count_right = count_destroyable_crates(x + 1, y, game_state, explosion_timer)
 
-    counts = np.array([count_up, count_down, count_left, count_right, count_crates + 1])
-    return np.random.choice(np.flatnonzero(counts == counts.max()))
+    counts = np.array([count_up, count_down, count_left, count_right])
+    positions = [(x, y - 1), (x, y + 1), (x - 1, y), (x + 1, y)]
+
+    for i in range(4):
+        if counts[i] > count_crates:
+            escape_info = prepare_escape_path_fields(game_state)
+            mark_bomb(game_state['field'], escape_info[2], 3, positions[i], True)
+            if find_shortest_escape_path((x, y), *escape_info, True) > 64:
+                counts[i] = 0
+
+    max_count = counts.max()
+    directions = np.array([0, 0, 0, 0])
+    if max_count > count_crates:
+        directions[counts == max_count] = 1
+    return directions
 
 
 def determine_is_worth_to_move_enemies(x, y, game_state: dict, count_enemies, explosion_timer):
@@ -473,8 +465,21 @@ def determine_is_worth_to_move_enemies(x, y, game_state: dict, count_enemies, ex
     count_left = count_destroyable_enemies(x - 1, y, game_state, explosion_timer)
     count_right = count_destroyable_enemies(x + 1, y, game_state, explosion_timer)
 
-    counts = np.array([count_up, count_down, count_left, count_right, count_enemies + 1])
-    return np.random.choice(np.flatnonzero(counts == counts.max()))
+    counts = np.array([count_up, count_down, count_left, count_right])
+    positions = [(x, y - 1), (x, y + 1), (x - 1, y), (x + 1, y)]
+
+    for i in range(4):
+        if counts[i] > count_enemies:
+            escape_info = prepare_escape_path_fields(game_state)
+            mark_bomb(game_state['field'], escape_info[2], 3, positions[i], True)
+            if find_shortest_escape_path((x, y), *escape_info, True) > 64:
+                counts[i] = 0
+
+    max_count = counts.max()
+    directions = np.array([0, 0, 0, 0])
+    if max_count > count_enemies:
+        directions[counts == max_count] = 1
+    return directions
 
 
 def determine_current_square(x, y, game_state: dict, count):
@@ -527,27 +532,46 @@ def state_to_features(game_state: dict) -> np.array:
     position = game_state['self'][3]
     x, y = position
 
-    explosion_timer = determine_explosion_timer(game_state)
-
     features = []
-    # features.extend(determine_neighbor_fields(x, y, game_state, explosion_timer))
-    features.append(determine_neighbor_fields(x, y, game_state, explosion_timer))
 
+    explosion_timer = determine_explosion_timer(game_state)
     count_crates, count_enemies = count_destroyable_crates_and_enemies(x, y, game_state, explosion_timer)
-
     current_square = determine_current_square(x, y, game_state, count_crates + count_enemies)
     features.append(current_square)
 
-    features.append(determine_coin_value(x, y, game_state, explosion_timer))
+    if current_square == 1:
+        features.extend(determine_escape_direction(x, y, game_state))
+        features.append(0)
+        return tuple(features)
 
-    if count_crates == 0 or current_square < 2:
-        features.append(determine_crate_value(x, y, game_state, explosion_timer))
-    else:
-        features.append(determine_is_worth_to_move_crates(x, y, game_state, count_crates, explosion_timer))
+    coins = determine_coin_value(x, y, game_state, explosion_timer)
+    if coins.max() > 0:
+        features.extend(coins)
+        features.append(1)
+        return tuple(features)
 
-    if count_enemies == 0 or current_square < 2:
-        features.append(determine_enemy_value(x, y, game_state, explosion_timer))
-    else:
-        features.append(determine_is_worth_to_move_enemies(x, y, game_state, count_enemies, explosion_timer))
+    if current_square > 1 and count_crates > 0:
+        features.extend(determine_is_worth_to_move_crates(x, y, game_state, count_crates, explosion_timer))
+        features.append(2)
+        return tuple(features)
 
+    crates = determine_crate_value(x, y, game_state, explosion_timer)
+    if crates.max() > 0:
+        features.extend(crates)
+        features.append(2)
+        return tuple(features)
+
+    if current_square > 1 and count_enemies > 0:
+        features.extend(determine_is_worth_to_move_enemies(x, y, game_state, count_enemies, explosion_timer))
+        features.append(3)
+        return tuple(features)
+
+    enemies = determine_enemy_value(x, y, game_state, explosion_timer)
+    if enemies.max() > 0:
+        features.extend(enemies)
+        features.append(3)
+        return tuple(features)
+
+    features.extend(determine_escape_direction(x, y, game_state))
+    features.append(0)
     return tuple(features)

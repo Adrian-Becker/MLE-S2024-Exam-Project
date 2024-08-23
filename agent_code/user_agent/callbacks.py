@@ -1,4 +1,4 @@
-from ..q_learning_crates.callbacks import state_to_features
+from ..q_learning_crates_reduced.callbacks import state_to_features
 
 
 def setup(self):

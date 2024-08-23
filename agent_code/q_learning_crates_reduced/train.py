@@ -21,7 +21,7 @@ TRANSITION_HISTORY_SIZE = 10000  # keep only ... last transitions
 
 TRANSITION_ENEMY_EPS_START = 0.999
 TRANSITION_ENEMY_EPS_END = 0.00
-TRANSITION_ENEMY_EPS_DECAY = 4000000
+TRANSITION_ENEMY_EPS_DECAY = 40000
 
 BOMB_EPS_START = 300.00
 BOMB_EPS_END = 75.00
@@ -34,6 +34,9 @@ EPOCHS_PER_ROUND = 10
 MOVED_TOWARDS_COIN_EVENT = "Moved Towards Coin"
 MOVED_AWAY_FROM_COIN_EVENT = "Moved Away from Coin"
 ESCAPE_BOMB_EVENT = "Escape Bomb"
+
+PLACED_BOMB_DESTROY_ONE_EVENT = "Placed Bomb Safely Destroy One"
+PLACED_BOMB_DESTROY_MULTIPLE_EVENT = "Placed Bomb Safely Destroy Multiple"
 
 LEARNING_RATE = 0.1
 DISCOUNT_FACTOR = 0.99
@@ -54,11 +57,11 @@ def setup_training(self):
 
     self.P = np.copy(self.Q)
     self.transitions = TransitionHistory(TRANSITION_HISTORY_SIZE)
-    self.point_history = deque([0], maxlen=100)
-    self.bomb_history = deque([0], maxlen=100)
-    self.time_history = deque([time.time()], maxlen=100)
-    self.rewards_history = deque([0], maxlen=100)
-    self.round = 25677
+    self.point_history = deque([0], maxlen=500)
+    self.bomb_history = deque([0], maxlen=500)
+    self.time_history = deque([time.time()], maxlen=500)
+    self.rewards_history = deque([0], maxlen=500)
+    self.round = 0
     self.bombs_dropped = 0
     self.save = 0
     self.total_rewards = 0
@@ -112,6 +115,11 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
             events.append(ESCAPE_BOMB_EVENT)
     if e.BOMB_DROPPED in events:
         self.bombs_dropped += 1
+    if e.BOMB_DROPPED in events:
+        if features_old[0] == 2:
+            events.append(PLACED_BOMB_DESTROY_ONE_EVENT)
+        elif features_old[1] == 3:
+            events.append(PLACED_BOMB_DESTROY_MULTIPLE_EVENT)
 
     rewards = reward_from_events(self, events)
     self.total_rewards += rewards
@@ -157,6 +165,17 @@ def enemy_game_events_occurred(self, name, old_game_state, self_action, new_game
             events.append(MOVED_TOWARDS_COIN_EVENT)
         elif distance_new > distance_old:
             events.append(MOVED_AWAY_FROM_COIN_EVENT)
+    if e.BOMB_DROPPED not in events:
+        if old_game_state['explosion_map'][old_game_state['self'][3]] > 0 and \
+                new_game_state['explosion_map'][new_game_state['self'][3]] == 0:
+            events.append(ESCAPE_BOMB_EVENT)
+    if e.BOMB_DROPPED in events:
+        self.bombs_dropped += 1
+    if e.BOMB_DROPPED in events:
+        if features_old[0] == 2:
+            events.append(PLACED_BOMB_DESTROY_ONE_EVENT)
+        elif features_old[1] == 3:
+            events.append(PLACED_BOMB_DESTROY_MULTIPLE_EVENT)
 
     rewards = reward_from_events(self, events)
 
@@ -314,7 +333,7 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     self.transitions.append(
         Transition(state_to_features(last_game_state),
                    ACTION_TO_INDEX[last_action],
-                   (4, 3, 4, 4, 4), reward_from_events(self, events))
+                   (0, 0, 0, 0, 0, 0), reward_from_events(self, events))
     )
 
     for _ in range(EPOCHS_PER_ROUND):
@@ -374,7 +393,8 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
           "\033[0m; P(copy enemy)=\033[96m" + prob_enemy_copy + "%\033[0m; P(exploration)=\033[96m" + prob_exploration +
           "%\033[0m; avg_bombs=\033[91m\033[1m" + avg_bombs + "\033[0m; bombs=\033[91m" + bombs +
           "\033[0m; bomb reward=\033[91m" + bomb_reward + "\033[0m; avg_rewards=\033[92m\033[1m" + reward_average +
-          "\033[0m; rewards=\033[92m" + rewards + "\033[0m")
+          "\033[0m; rewards=\033[92m" + rewards + "\033[0m" + "{:5.2f}".format(np.average(self.Q)) + " " +
+          "{:5.2f}".format(np.average(self.P)))
     self.bombs_dropped = 0
 
     if self.round % 10 == 0:
@@ -401,7 +421,9 @@ def reward_from_events(self, events: List[str]) -> int:
         e.COIN_FOUND: 50,
         MOVED_TOWARDS_COIN_EVENT: 100,
         MOVED_AWAY_FROM_COIN_EVENT: -100,
-        ESCAPE_BOMB_EVENT: 500
+        ESCAPE_BOMB_EVENT: 500,
+        PLACED_BOMB_DESTROY_ONE_EVENT: 200,
+        PLACED_BOMB_DESTROY_MULTIPLE_EVENT: 500
     }
 
     reward_sum = 0
