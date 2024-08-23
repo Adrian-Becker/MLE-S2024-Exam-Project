@@ -188,6 +188,8 @@ def determine_coin_value(x, y, game_state: dict, explosion_timer):
 
 
 def count_destroyable_crates(x, y, game_state: dict, explosion_timer):
+    if game_state['field'][x, y] != 0:
+        return 0
     count_crates = 0
     field = game_state['field']
 
@@ -224,6 +226,9 @@ def count_destroyable_crates(x, y, game_state: dict, explosion_timer):
 
 
 def count_destroyable_enemies(x, y, game_state: dict, explosion_timer):
+    if game_state['field'][x, y] != 0:
+        return 0
+
     count_enemies = 0
     field = game_state['field']
 
@@ -258,6 +263,9 @@ def count_destroyable_enemies(x, y, game_state: dict, explosion_timer):
 
 
 def count_destroyable_crates_and_enemies(x, y, game_state: dict, explosion_timer):
+    if game_state['field'][x, y] != 0:
+        return 0
+
     count_crates = 0
     count_enemies = 0
     field = game_state['field']

@@ -295,28 +295,19 @@ def old_sync_symmetries(self):
 def sync_symmetries(Q):
     new_Q = np.zeros_like(Q)
 
-    for field in range(0, 5):
-        for index_current_square in range(0, 4):
-            for index_coins in range(0, 5):
-                for index_crate in range(0, 5):
-                    for index_enemy in range(0, 5):
-                        norm = 0
-                        for action in ACTION_INDICES:
-                            value = 0
-                            for conversion in CONVERSIONS:
-                                neighbor_fields = conversion[field]
-                                coins = conversion[index_coins]
-                                crate = conversion[index_crate]
-                                enemy = conversion[index_enemy]
-                                value += Q[(neighbor_fields, index_current_square, coins, crate, enemy, action)]
-                            new_Q[(
-                                field, index_current_square, index_coins, index_crate, index_enemy,
-                                action)] = value / 6.0
-                            # norm += value * value
-                        # factor = 1000 / np.sqrt(norm) if norm > 1 else 10
-                        # for action in ACTION_INDICES:
-                        #    new_Q[
-                        #        (field, index_current_square, index_coins, index_crate, index_enemy, action)] *= factor
+    for current_field in range(0, 4):
+        for f1 in range(0, 2):
+            for f2 in range(0, 2):
+                for f3 in range(0, 2):
+                    for f4 in range(0, 2):
+                        for mode in range(0, 4):
+                            for action in ACTION_INDICES:
+                                value = 0
+                                neighbor_fields = (f1, f2, f3, f4)
+                                for conversion in CONVERSIONS:
+                                    converted_neighbor_fields = transmute_neighbors(conversion, neighbor_fields)
+                                    value += Q[current_field][converted_neighbor_fields][(mode, action)]
+                                new_Q[current_field][neighbor_fields][(mode, action)] = value / 6.0
     return new_Q
 
 
@@ -342,8 +333,8 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     self.round += 1
 
     if self.round % SYMMETRY_SYNC_RATE == 0:
-        # self.Q = sync_symmetries(self.Q)
-        # self.P = sync_symmetries(self.P)
+        self.Q = sync_symmetries(self.Q)
+        self.P = sync_symmetries(self.P)
         pass
 
     if self.round % ROUNDS_PER_SAVE == 0:
@@ -413,8 +404,8 @@ def reward_from_events(self, events: List[str]) -> int:
         e.KILLED_OPPONENT: 5000,
         e.KILLED_SELF: -500,
         e.GOT_KILLED: -400,
-        e.INVALID_ACTION: -200,
-        e.WAITED: -100,
+        e.INVALID_ACTION: -2000,
+        e.WAITED: -200,
         e.BOMB_DROPPED: BOMB_EPS_END + (BOMB_EPS_START - BOMB_EPS_END) * math.exp(
             -1. * self.iteration / BOMB_EPS_DECAY),
         e.CRATE_DESTROYED: 200,
