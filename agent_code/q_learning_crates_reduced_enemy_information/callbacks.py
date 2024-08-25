@@ -191,7 +191,7 @@ def determine_best_direction(x, y, field, targets):
     directions = np.array([0, 0, 0, 0])
     if min_distance < 64:
         directions[distances == min_distance] = 1
-    return directions
+    return directions, min_distance
 
 
 def determine_coin_value(x, y, game_state: dict, explosion_timer):
@@ -579,8 +579,9 @@ def partially_fill(features, game_state, x, y, current_square, count_crates, cou
         features.append(0)
         return features
 
-    coins = determine_coin_value(x, y, game_state, explosion_timer)
-    if coins.max() > 0:
+    coins, min_distance_coins = determine_coin_value(x, y, game_state, explosion_timer)
+    coins_valid = coins.max() > 0
+    if coins_valid and min_distance_coins < 10:
         features.extend(coins)
         features.append(1)
         return features
@@ -590,8 +591,19 @@ def partially_fill(features, game_state, x, y, current_square, count_crates, cou
         features.append(2)
         return features
 
-    crates = determine_crate_value(x, y, game_state, explosion_timer)
-    if crates.max() > 0:
+    crates, min_distance_crates = determine_crate_value(x, y, game_state, explosion_timer)
+    crates_valid = crates.max() > 0
+    if crates_valid and min_distance_crates < 10:
+        features.extend(crates)
+        features.append(2)
+        return features
+
+    if coins_valid:
+        features.extend(crates)
+        features.append(2)
+        return features
+
+    if crates_valid:
         features.extend(crates)
         features.append(2)
         return features
@@ -601,7 +613,7 @@ def partially_fill(features, game_state, x, y, current_square, count_crates, cou
         features.append(3)
         return features
 
-    enemies = determine_enemy_value(x, y, game_state, explosion_timer)
+    enemies, min_distance_enemies = determine_enemy_value(x, y, game_state, explosion_timer)
     if enemies.max() > 0:
         features.extend(enemies)
         features.append(3)
@@ -612,7 +624,7 @@ def partially_fill(features, game_state, x, y, current_square, count_crates, cou
     return features
 
 
-def fill_reachable_map(field, reachable_field, bomb_field, explosion_time, position, max_depth=5):
+def fill_reachable_map(field, reachable_field, bomb_field, explosion_time, position, max_depth=3):
     todo = [position]
     distances = {position: -1}
 
