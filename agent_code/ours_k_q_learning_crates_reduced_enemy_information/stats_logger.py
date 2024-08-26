@@ -72,6 +72,7 @@ class StatsLogger:
         runtime = int(current_time - self.start_time)
         rounds_per_second = len(self.histories['time']) / (current_time - self.histories['time'][0])
         time_per_thousand_rounds = 1000 / rounds_per_second
+        time_per_thousand_rounds /= 60
 
         output += (BOLD + "Round " + COLOR_FORMAT.format(33) + '{:6d}'.format(current_round) + RESET +
                    ("(" + str(format(iteration)) + ")").rjust(11) + "; " +
@@ -79,7 +80,7 @@ class StatsLogger:
                    COLOR_FORMAT.format(33) + '{:6.2f}min'.format(
                     time_per_thousand_rounds) + RESET + " per 1000 rounds; " +
                    "runtime = " + COLOR_FORMAT.format(33) + str(datetime.timedelta(seconds=runtime)).rjust(
-                    8) + RESET + '\n\n')
+                    8) + RESET + (' ' * 5) + '\n\n')
 
         for stat in self.stats:
             output += ' ' * 5 + "- "
@@ -87,10 +88,10 @@ class StatsLogger:
                 text = self._get_string_average(stat)
                 output += text[0].ljust(self.min_width_a1) + ' = ' + text[1].rjust(self.min_width_a2 + AVERAGE_OFFSET)
                 text = self._get_string_current_value(stat)
-                output += text[0].ljust(self.min_width_b1) + ' = ' + text[1].rjust(self.min_width_b2) + '\n'
+                output += text[0].ljust(self.min_width_b1) + ' = ' + text[1].rjust(self.min_width_b2) + (' ' * 7) + '\n'
             else:
                 text = self._get_string_current_value(stat)
-                output += text[0].ljust(self.min_width_a1) + ' = ' + text[1].rjust(self.min_width_a2) + '\n'
+                output += text[0].ljust(self.min_width_a1) + ' = ' + text[1].rjust(self.min_width_a2) + (' ' * 7) + '\n'
         print(output)
 
         if current_round % 10 == 0:

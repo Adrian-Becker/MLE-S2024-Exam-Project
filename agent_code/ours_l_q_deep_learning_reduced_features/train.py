@@ -36,7 +36,7 @@ LEARNING_RATE_OPTIMIZER = 1e-6
 DISCOUNT_FACTOR = 0.9
 TAU = 0.005
 
-ROUNDS_PER_SAVE = 250
+ROUNDS_PER_SAVE = 500
 
 # Events
 MOVED_TOWARDS_COIN_EVENT = "Moved Towards Coin"
@@ -177,6 +177,8 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
         self.invalid_moves += 1
     if e.BOMB_DROPPED in events:
         self.bombs_dropped += 1
+
+    self.total_rewards += reward_from_events(self, events)
 
 def enemy_game_events_occurred(self, name, old_game_state, self_action, new_game_state, events):
     random_prob = TRANSITION_ENEMY_EPS_END + (TRANSITION_ENEMY_EPS_START - TRANSITION_ENEMY_EPS_END) * \
