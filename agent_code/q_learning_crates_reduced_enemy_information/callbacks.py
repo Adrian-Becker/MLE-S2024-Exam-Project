@@ -736,7 +736,11 @@ def state_to_features(game_state: dict) -> np.array:
     partially_fill(features, game_state, x, y, current_square, count_crates, count_enemies, explosion_timer, bomb_input)
 
     positions = [(x, y - 1), (x, y + 1), (x - 1, y), (x + 1, y)]
+    field = np.abs(game_state['field'])
+    for enemy in game_state['others']:
+        field[enemy[3]] = 1
+
     for dposition in positions:
-        features.append(1 if danger_map[dposition] >= danger_map[position] else 0)
+        features.append(1 if danger_map[dposition] >= danger_map[position] and field[dposition] == 0 else 0)
 
     return tuple(features)
