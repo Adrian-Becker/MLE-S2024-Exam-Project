@@ -163,8 +163,6 @@ def add_custom_events(self, old_game_state: dict, self_action: str, new_game_sta
                 new_game_state['explosion_map'][new_game_state['self'][3]] == 0:
             events.append(ESCAPE_BOMB_EVENT)
     if e.BOMB_DROPPED in events:
-        self.bombs_dropped += 1
-    if e.BOMB_DROPPED in events:
         if features_old[0] == 2:
             events.append(PLACED_BOMB_DESTROY_ONE_EVENT)
         elif features_old[0] == 3:
@@ -223,6 +221,8 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
         self.kills += 1
     if e.INVALID_ACTION in events:
         self.invalid_moves += 1
+    if e.BOMB_DROPPED in events:
+        self.bombs_dropped += 1
 
 
 def enemy_game_events_occurred(self, name, old_game_state, self_action, new_game_state, events):

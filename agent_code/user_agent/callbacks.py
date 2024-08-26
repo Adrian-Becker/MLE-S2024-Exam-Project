@@ -1,4 +1,4 @@
-from ..q_learning_crates_reduced_enemy_information.callbacks import state_to_features
+from ..ours_k_q_learning_crates_reduced_enemy_information.callbacks import state_to_features
 
 
 def setup(self):
