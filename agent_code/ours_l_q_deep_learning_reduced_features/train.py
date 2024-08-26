@@ -290,7 +290,7 @@ def reward_from_events(self, events: List[str]) -> int:
     game_rewards = {
         e.COIN_COLLECTED: 10000,
         e.KILLED_OPPONENT: 50000,
-        e.KILLED_SELF: -10000,
+        e.KILLED_SELF: -20000,
         e.GOT_KILLED: -4000,
         e.INVALID_ACTION: -5000,
         e.WAITED: 5000,
