@@ -37,6 +37,8 @@ WAITED_WITHOUT_NEED_EVENT = "Waited Without Need"
 PLACED_BOMB_DESTROY_ONE_EVENT = "Placed Bomb Safely Destroy One"
 PLACED_BOMB_DESTROY_MULTIPLE_EVENT = "Placed Bomb Safely Destroy Multiple"
 
+REPEATED_FIELD_EVENT = "Repeated Field"
+
 PLACE_BOMB_TARGET_CRATE_EVENT = "Place Bomb Target Crate"
 
 LEARNING_RATE = 0.1
@@ -135,6 +137,7 @@ def setup_training(self):
     self.invalid_moves = 0
     self.suicides = 0
     self.kills = 0
+    self.field_history = deque(maxlen=4)
 
     if not os.path.exists("tables"):
         os.makedirs("tables")
@@ -199,7 +202,6 @@ def handle_event_occurrence(self, old_game_state: dict, self_action: str, new_ga
     add_custom_events(self, old_game_state, self_action, new_game_state, events, features_old, features_new)
 
     rewards = reward_from_events(self, events)
-    self.total_rewards += rewards
 
     # state_to_features is defined in callbacks.py
     transition = Transition(features_old, action_old, features_new, rewards)
@@ -221,7 +223,13 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
     """
     self.logger.debug(f'Encountered game event(s) {", ".join(map(repr, events))} in step {new_game_state["step"]}')
 
+    if new_game_state['self'][3] in self.field_history:
+        events.append(REPEATED_FIELD_EVENT)
+    self.field_history.append(new_game_state['self'][3])
+
+
     handle_event_occurrence(self, old_game_state, self_action, new_game_state, events)
+    self.total_rewards += reward_from_events(self, events)
 
     self.iteration += 1
     self.iteration_per_round += 1
@@ -369,7 +377,8 @@ def reward_from_events(self, events: List[str]) -> int:
         ESCAPE_BOMB_EVENT: 2000,
         PLACED_BOMB_DESTROY_ONE_EVENT: 2500,
         PLACED_BOMB_DESTROY_MULTIPLE_EVENT: 4000,
-        PLACE_BOMB_TARGET_CRATE_EVENT: 10000
+        PLACE_BOMB_TARGET_CRATE_EVENT: 10000,
+        REPEATED_FIELD_EVENT: -2000
     }
 
     reward_sum = 0
