@@ -408,7 +408,7 @@ def determine_escape_direction_vector(x, y, game_state: dict, bomb_input):
         find_shortest_escape_path((x, y + 1), *bomb_input),
         find_shortest_escape_path((x - 1, y), *bomb_input),
         find_shortest_escape_path((x + 1, y), *bomb_input),
-    ])
+    ]).astype(np.float32)
     distances[distances > 12] = 5
     distances /= -5
     distances += 1
