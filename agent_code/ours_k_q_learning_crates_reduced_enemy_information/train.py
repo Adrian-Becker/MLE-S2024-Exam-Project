@@ -10,7 +10,7 @@ import numpy as np
 
 import events as e
 from .callbacks import state_to_features, ACTION_TO_INDEX, ACTION_INDICES, EPS_START, EPS_END, EPS_DECAY
-from features import breadth_first_search, prepare_field_coins, determine_explosion_timer
+from features import breadth_first_search, prepare_field_coins, determine_explosion_timer, count_destroyable_crates
 
 from .history import TransitionHistory, Transition
 
@@ -36,6 +36,8 @@ WAITED_WITHOUT_NEED_EVENT = "Waited Without Need"
 
 PLACED_BOMB_DESTROY_ONE_EVENT = "Placed Bomb Safely Destroy One"
 PLACED_BOMB_DESTROY_MULTIPLE_EVENT = "Placed Bomb Safely Destroy Multiple"
+
+PLACE_BOMB_TARGET_CRATE_EVENT = "Place Bomb Target Crate"
 
 LEARNING_RATE = 0.1
 DISCOUNT_FACTOR = 0.99
@@ -145,11 +147,12 @@ def setup_training(self):
 
 def add_custom_events(self, old_game_state: dict, self_action: str, new_game_state: dict, events: List[str],
                       features_old, features_new):
+    explosion_timer_old = determine_explosion_timer(old_game_state)
     if e.COIN_COLLECTED not in events and len(old_game_state['coins']) > 0 and len(new_game_state['coins']) > 0:
         # no coin collected => agent might have moved closer to coin
         distance_old = breadth_first_search(
             old_game_state['self'][3],
-            *prepare_field_coins(old_game_state, determine_explosion_timer(old_game_state)))
+            *prepare_field_coins(old_game_state, explosion_timer_old))
         distance_new = breadth_first_search(
             new_game_state['self'][3],
             *prepare_field_coins(new_game_state, determine_explosion_timer(new_game_state)))
@@ -167,6 +170,11 @@ def add_custom_events(self, old_game_state: dict, self_action: str, new_game_sta
             events.append(PLACED_BOMB_DESTROY_ONE_EVENT)
         elif features_old[0] == 3:
             events.append(PLACED_BOMB_DESTROY_MULTIPLE_EVENT)
+        if features_old[0] > 1:
+            x, y = old_game_state['self'][3]
+            count_crates = count_destroyable_crates(x, y, old_game_state, explosion_timer_old)
+            for _ in range(count_crates):
+                events.append(PLACE_BOMB_TARGET_CRATE_EVENT)
     if e.WAITED in events and (max(features_old[1:5]) > 0 or features_old[0] > 0):
         events.append(WAITED_WITHOUT_NEED_EVENT)
 
@@ -346,7 +354,7 @@ def reward_from_events(self, events: List[str]) -> int:
     Rewards are defined in the global variable GAME_REWARDS.
     """
     game_rewards = {
-        e.COIN_COLLECTED: 10000,
+        e.COIN_COLLECTED: 20000,
         e.KILLED_OPPONENT: 50000,
         e.KILLED_SELF: -10000,
         e.GOT_KILLED: -4000,
@@ -360,7 +368,8 @@ def reward_from_events(self, events: List[str]) -> int:
         MOVED_AWAY_FROM_COIN_EVENT: -1000,
         ESCAPE_BOMB_EVENT: 2000,
         PLACED_BOMB_DESTROY_ONE_EVENT: 2500,
-        PLACED_BOMB_DESTROY_MULTIPLE_EVENT: 4000
+        PLACED_BOMB_DESTROY_MULTIPLE_EVENT: 4000,
+        PLACE_BOMB_TARGET_CRATE_EVENT: 10000
     }
 
     reward_sum = 0
