@@ -1,3 +1,4 @@
+import os
 from collections import namedtuple, deque
 import time
 import datetime
@@ -66,6 +67,9 @@ class StatsLogger:
         Outputs the current data of the logger to both the console and every 10 rounds to stats.csv.
         If output looks weird ensure that *tqdm* is disabled and console emulation is enabled in your IDE.
         """
+        if current_round % 10 == 0:
+            os.system('cls' if os.name == 'nt' else 'clear')
+
         output = '\033[3;1H'
         current_time = time.time()
         self.histories['time'].append(current_time)

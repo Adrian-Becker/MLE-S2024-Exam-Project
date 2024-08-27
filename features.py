@@ -71,6 +71,22 @@ def prepare_field_coins(game_state: dict, explosion_timer):
     return np.clip(field, 0, 1), targets
 
 
+def determine_best_direction_vector(x, y, field, targets):
+    distance_up = breadth_first_search((x, y - 1), field, targets)
+    distance_down = breadth_first_search((x, y + 1), field, targets)
+    distance_left = breadth_first_search((x - 1, y), field, targets)
+    distance_right = breadth_first_search((x + 1, y), field, targets)
+
+    distances = np.array([distance_up, distance_down, distance_left, distance_right]).astype(np.float32)
+    min_distance = distances.min()
+
+    distances[distances > 32] = 32
+    distances /= -32
+    distances += 1
+
+    return distances, min_distance
+
+
 def determine_best_direction(x, y, field, targets):
     distance_up = breadth_first_search((x, y - 1), field, targets)
     distance_down = breadth_first_search((x, y + 1), field, targets)
@@ -131,6 +147,24 @@ def breadth_first_search_coins(position, field, targets):
                 distance[neighbor] = distance[current] + 1
                 todo.append(neighbor)
     return math.inf
+
+
+def determine_coin_value_vector(x, y, game_state: dict, explosion_timer):
+    field, _ = prepare_field_coins(game_state, explosion_timer)
+    targets = find_winnable_coins(field, game_state['coins'], game_state['others'])
+
+    distances = np.array([
+        breadth_first_search_coins((x, y - 1), field, targets),
+        breadth_first_search_coins((x, y + 1), field, targets),
+        breadth_first_search_coins((x - 1, y), field, targets),
+        breadth_first_search_coins((x + 1, y), field, targets)
+    ]).astype(np.float32)
+
+    distances[distances > 32] = 32.0
+    distances /= -32.0
+    distances += 1
+
+    return distances
 
 
 def determine_coin_value(x, y, game_state: dict, explosion_timer):
@@ -368,6 +402,19 @@ def prepare_escape_path_fields(game_state: dict):
     return field, bomb_field, explosion_timer
 
 
+def determine_escape_direction_vector(x, y, game_state: dict, bomb_input):
+    distances = np.array([
+        find_shortest_escape_path((x, y - 1), *bomb_input),
+        find_shortest_escape_path((x, y + 1), *bomb_input),
+        find_shortest_escape_path((x - 1, y), *bomb_input),
+        find_shortest_escape_path((x + 1, y), *bomb_input),
+    ])
+    distances[distances > 12] = 5
+    distances /= -5
+    distances += 1
+    return distances
+
+
 def determine_escape_direction(x, y, game_state: dict, bomb_input):
     distances = np.array([
         find_shortest_escape_path((x, y - 1), *bomb_input),
@@ -381,6 +428,28 @@ def determine_escape_direction(x, y, game_state: dict, bomb_input):
     if min_distance < math.inf:
         moves[distances == min_distance] = 1
     return moves
+
+
+def determine_crate_value_vector(x, y, game_state: dict, explosion_timer):
+    field = np.clip(game_state['field'], -1, 1) * -1
+    for other in game_state['others']:
+        field[other[3]] = 1
+    field += game_state['explosion_map'].astype(int)
+    field[explosion_timer != 1000] += 1
+    field = np.clip(field, 0, 1)
+
+    targets = np.clip(game_state['field'], 0, 1)
+    targets[explosion_timer != 1000] = 0
+
+    directions, min_distance = determine_best_direction_vector(x, y, field, targets)
+    if min_distance == 1:
+        positions = [(x, y - 1), (x, y + 1), (x - 1, y), (x + 1, y)]
+        for i in range(len(directions)):
+            if directions[i] > 0.95:
+                field[positions[i]] = 1
+        directions, _ = determine_best_direction_vector(x, y, field, targets)
+        return directions
+    return directions
 
 
 def determine_crate_value(x, y, game_state: dict, explosion_timer):
@@ -402,6 +471,19 @@ def determine_crate_value(x, y, game_state: dict, explosion_timer):
                 field[positions[i]] = 1
         return determine_best_direction(x, y, field, targets)
     return directions, min_distance
+
+
+def determine_enemy_value_vector(x, y, game_state: dict, explosion_timer):
+    field = np.abs(game_state['field'])
+    field += game_state['explosion_map'].astype(int)
+    field[explosion_timer != 1000] += 1
+
+    targets = np.zeros_like(field)
+    for other in game_state['others']:
+        targets[other[3]] = 1
+
+    directions, _ = determine_best_direction_vector(x, y, np.clip(field, 0, 1), targets)
+    return directions
 
 
 def determine_enemy_value(x, y, game_state: dict, explosion_timer):
@@ -460,6 +542,12 @@ def determine_is_worth_to_move_enemies(x, y, game_state: dict, count_enemies, ex
     if max_count > count_enemies:
         directions[counts == max_count] = 1
     return directions
+
+
+def determine_current_square_vector(x, y, game_state: dict, count):
+    result = np.zeros((4,))
+    result[determine_current_square(x, y, game_state, count)] = 1
+    return result
 
 
 def determine_current_square(x, y, game_state: dict, count):
