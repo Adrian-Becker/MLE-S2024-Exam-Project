@@ -85,10 +85,69 @@ def determine_best_direction(x, y, field, targets):
     return directions, min_distance
 
 
-def determine_coin_value(x, y, game_state: dict, explosion_timer):
-    field, targets = prepare_field_coins(game_state, explosion_timer)
+def discover_coins(enemy, field, targets):
+    todo = [enemy[3]]
+    distance = {enemy[3]: 0}
 
-    return determine_best_direction(x, y, field, targets)
+    while len(todo) > 0:
+        current = todo.pop(0)
+        if targets[current] > 0:
+            targets[current] = min(targets[current], distance[current])
+
+        x, y = current
+        neighbors = [(x, y) for (x, y) in [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)] if field[x, y] == 0]
+        for neighbor in neighbors:
+            if neighbor not in distance:
+                distance[neighbor] = distance[current] + 1
+                todo.append(neighbor)
+
+
+def find_winnable_coins(field, coins, enemies):
+    targets = np.zeros_like(field)
+    for coin in coins:
+        targets[coin] = 1000
+    for enemy in enemies:
+        discover_coins(enemy, field, targets)
+    return targets
+
+
+def breadth_first_search_coins(position, field, targets):
+    if field[position] != 0:
+        return math.inf
+
+    todo = [position]
+    distance = {position: 1}
+
+    while len(todo) > 0:
+        current = todo.pop(0)
+
+        if targets[current] - distance[current] > 0:
+            return distance[current]
+
+        x, y = current
+        neighbors = [(x, y) for (x, y) in [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)] if field[x, y] == 0]
+        for neighbor in neighbors:
+            if neighbor not in distance:
+                distance[neighbor] = distance[current] + 1
+                todo.append(neighbor)
+    return math.inf
+
+
+def determine_coin_value(x, y, game_state: dict, explosion_timer):
+    field, _ = prepare_field_coins(game_state, explosion_timer)
+    targets = find_winnable_coins(field, game_state['coins'], game_state['others'])
+
+    distance_up = breadth_first_search_coins((x, y - 1), field, targets)
+    distance_down = breadth_first_search_coins((x, y + 1), field, targets)
+    distance_left = breadth_first_search_coins((x - 1, y), field, targets)
+    distance_right = breadth_first_search_coins((x + 1, y), field, targets)
+
+    distances = np.array([distance_up, distance_down, distance_left, distance_right])
+    min_distance = distances.min()
+    directions = np.array([0, 0, 0, 0])
+    if min_distance < 64:
+        directions[distances == min_distance] = 1
+    return directions, min_distance
 
 
 def count_destroyable_crates(x, y, game_state: dict, explosion_timer):
@@ -236,7 +295,8 @@ def is_explosion_time_save(time):
 
 def find_shortest_escape_path(position, field, bomb_field, explosion_time, ignore_starting_square=False,
                               starting_distance=0):
-    if (field[position] != 0 or bomb_field[position] != 1000) and not ignore_starting_square:
+    if (field[position] != 0 or bomb_field[position] != 1000 or not is_explosion_time_save(
+            explosion_time[position])) and not ignore_starting_square:
         return math.inf
 
     todo = [position]
@@ -470,6 +530,17 @@ def determine_trap_escape_direction(x, y, game_state: dict, bomb_input, danger_m
     return moves
 
 
+def save_directions(x, y, game_state, explosion_timer):
+    field, _ = prepare_field_coins(game_state, explosion_timer)
+    positions = [
+        1 if field[x, y - 1] == 0 else 0,
+        1 if field[x, y + 1] == 0 else 0,
+        1 if field[x - 1, y] == 0 else 0,
+        1 if field[x + 1, y] == 0 else 0
+    ]
+    return positions
+
+
 def partially_fill(features, game_state, x, y, current_square, count_crates, count_enemies, explosion_timer,
                    bomb_input):
     if current_square == 1:
@@ -479,7 +550,7 @@ def partially_fill(features, game_state, x, y, current_square, count_crates, cou
 
     coins, min_distance_coins = determine_coin_value(x, y, game_state, explosion_timer)
     coins_valid = coins.max() > 0
-    if coins_valid and min_distance_coins < 10:
+    if coins_valid:
         features.extend(coins)
         features.append(1)
         return features
@@ -491,16 +562,6 @@ def partially_fill(features, game_state, x, y, current_square, count_crates, cou
 
     crates, min_distance_crates = determine_crate_value(x, y, game_state, explosion_timer)
     crates_valid = crates.max() > 0
-    if crates_valid and min_distance_crates < 10:
-        features.extend(crates)
-        features.append(2)
-        return features
-
-    if coins_valid:
-        features.extend(crates)
-        features.append(2)
-        return features
-
     if crates_valid:
         features.extend(crates)
         features.append(2)
@@ -517,7 +578,7 @@ def partially_fill(features, game_state, x, y, current_square, count_crates, cou
         features.append(3)
         return features
 
-    features.extend(determine_escape_direction(x, y, game_state, bomb_input))
+    features.extend(save_directions(x, y, game_state, explosion_timer))
     features.append(0)
     return features
 

@@ -106,7 +106,7 @@ def act(self, game_state: dict) -> str:
     best_action_index = np.array(list(map(lambda action: self.Q[self.last_features][action], ACTION_INDICES))).argmax()
     action = ACTIONS[best_action_index]
     if not self.train:
-        # print(f"{action} {self.last_features}")
-        # print(self.Q[self.last_features])
+        print(f"{action} {self.last_features}")
+        #print(self.Q[self.last_features])
         pass
     return action

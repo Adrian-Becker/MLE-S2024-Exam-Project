@@ -12,7 +12,7 @@ def plot():
         for row in data:
             iterations.append(row[0])
             avg_points.append(row[1])
-            avg_bombs.append(row[7])
+            avg_bombs.append(row[2])
 
     iterations = np.array(iterations).astype(np.int64)
     avg_points = np.array(avg_points).astype(np.double)
