@@ -26,17 +26,11 @@ EPS_DECAY = 80000
 class DQN(nn.Module):
     def __init__(self):
         super(DQN, self).__init__()
-        self.layer1 = nn.Linear(10, 32)
-        self.layer2 = nn.Linear(32, 64)
-        self.layer3 = nn.Linear(64, 64)
-        self.layer4 = nn.Linear(64, 64)
+        self.layer1 = nn.Linear(10, 64)
         self.layer5 = nn.Linear(64, 6)
 
     def forward(self, x):
         x = F.relu(self.layer1(x))
-        x = F.relu(self.layer2(x))
-        x = F.relu(self.layer3(x))
-        x = F.relu(self.layer4(x))
         return self.layer5(x)
 
 

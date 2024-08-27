@@ -46,7 +46,7 @@ WAITED_WITHOUT_NEED_EVENT = "Waited Without Need"
 
 PLACED_BOMB_DESTROY_ONE_EVENT = "Placed Bomb Safely Destroy One"
 PLACED_BOMB_DESTROY_MULTIPLE_EVENT = "Placed Bomb Safely Destroy Multiple"
-
+PLACED_INESCAPABLE_BOMB_EVENT = "Placed Inescapable Bomb"
 
 def setup_training(self):
     """
@@ -116,15 +116,26 @@ def add_custom_events(self, old_game_state: dict, self_action: str, new_game_sta
                 new_game_state['explosion_map'][new_game_state['self'][3]] == 0:
             events.append(ESCAPE_BOMB_EVENT)
     if e.BOMB_DROPPED in events:
-        self.bombs_dropped += 1
-    if e.BOMB_DROPPED in events:
         if features_old[0] == 2:
             events.append(PLACED_BOMB_DESTROY_ONE_EVENT)
         elif features_old[0] == 3:
             events.append(PLACED_BOMB_DESTROY_MULTIPLE_EVENT)
+        elif features_old[0] == 0:
+            events.append(PLACED_INESCAPABLE_BOMB_EVENT)
+
     if e.WAITED in events and (max(features_old[1:5]) > 0 or features_old[0] > 0):
         events.append(WAITED_WITHOUT_NEED_EVENT)
 
+
+def train_batch(self):
+    if len(self.transitions) >= MINI_BATCH_SIZE:
+        optimize_network(self, random.sample(self.transitions, MINI_BATCH_SIZE))
+
+        target_net_state_dict = self.target_net.state_dict()
+        policy_net_state_dict = self.policy_net.state_dict()
+        for key in policy_net_state_dict:
+            target_net_state_dict[key] = policy_net_state_dict[key] * TAU + target_net_state_dict[key] * (1 - TAU)
+        self.target_net.load_state_dict(target_net_state_dict)
 
 def handle_event_occurrence(self, old_game_state: dict, self_action: str, new_game_state: dict, events: List[str]):
     features_old = state_to_features(old_game_state)
@@ -139,14 +150,7 @@ def handle_event_occurrence(self, old_game_state: dict, self_action: str, new_ga
                    features_new, torch.Tensor([reward_from_events(self, events)])))
 
     # training
-    if len(self.transitions) >= MINI_BATCH_SIZE:
-        optimize_network(self, random.sample(self.transitions, MINI_BATCH_SIZE))
-
-        target_net_state_dict = self.target_net.state_dict()
-        policy_net_state_dict = self.policy_net.state_dict()
-        for key in policy_net_state_dict:
-            target_net_state_dict[key] = policy_net_state_dict[key] * TAU + target_net_state_dict[key] * (1 - TAU)
-        self.target_net.load_state_dict(target_net_state_dict)
+    train_batch(self)
 
 def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_state: dict, events: List[str]):
     """
@@ -239,8 +243,13 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     :param self: The same object that is passed to all of your callbacks.
     """
     self.logger.debug(f'Encountered event(s) {", ".join(map(repr, events))} in final step')
-    # self.transitions.append(
-    #    Transition(state_to_features(last_game_state), last_action, None, reward_from_events(self, events)))
+    # state_to_features is defined in callbacks.py
+    features_old = state_to_features(last_game_state)
+    self.transitions.append(
+        Transition(features_old, torch.Tensor([ACTION_TO_INDEX[last_action]]).to(torch.int64),
+                   torch.Tensor([0, 0, 0, 0, 0, 0, 0, 0, 0, 0]), torch.Tensor([reward_from_events(self, events)])))
+    # training
+    train_batch(self)
 
     self.iteration += 1
     self.iteration_per_round += 1
@@ -291,6 +300,7 @@ def reward_from_events(self, events: List[str]) -> int:
         e.COIN_COLLECTED: 10000,
         e.KILLED_OPPONENT: 50000,
         e.KILLED_SELF: -20000,
+        PLACED_INESCAPABLE_BOMB_EVENT: -20000,
         e.GOT_KILLED: -4000,
         e.INVALID_ACTION: -5000,
         e.WAITED: 5000,
