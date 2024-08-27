@@ -9,14 +9,14 @@ from typing import List
 import numpy as np
 
 import events as e
-from .callbacks import state_to_features, find_distance_to_coin, ACTION_TO_INDEX, breadth_first_search, \
-    determine_next_action, prepare_field_coins, ACTION_INDICES, EPS_START, EPS_END, EPS_DECAY, determine_explosion_timer
+from .callbacks import state_to_features, ACTION_TO_INDEX, ACTION_INDICES, EPS_START, EPS_END, EPS_DECAY
+from features import breadth_first_search, prepare_field_coins, determine_explosion_timer
 
 from .history import TransitionHistory, Transition
 
 import tqdm
 
-from .stats_logger import StatsLogger, Stat
+from stats_logger import StatsLogger, Stat
 
 # Hyper parameters -- DO modify
 TRANSITION_HISTORY_SIZE = 10000  # keep only ... last transitions

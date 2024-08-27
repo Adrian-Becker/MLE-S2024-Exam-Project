@@ -9,7 +9,7 @@ import numpy as np
 
 import torch.nn.functional as F
 
-from ..ours_k_q_learning_crates_reduced_enemy_information.callbacks import state_to_features as state_to_features_prep
+from features import state_to_features_for_q_learning as state_to_features_prep
 
 ACTIONS = ['UP', 'DOWN', 'LEFT', 'RIGHT', 'WAIT', 'BOMB']
 ACTION_INDICES = np.array([0, 1, 2, 3, 4, 5]).astype(int)
@@ -26,7 +26,7 @@ EPS_DECAY = 80000
 class DQN(nn.Module):
     def __init__(self):
         super(DQN, self).__init__()
-        self.layer1 = nn.Linear(10, 64)
+        self.layer1 = nn.Linear(13, 64)
         self.layer5 = nn.Linear(64, 6)
 
     def forward(self, x):
@@ -90,4 +90,8 @@ def act(self, game_state: dict) -> str:
 
 
 def state_to_features(game_state: dict):
-    return torch.as_tensor(state_to_features_prep(game_state)).float()
+    features = state_to_features_prep(game_state)
+    final_features = np.zeros((13,))
+    final_features[features[0]] = 1
+    final_features[4:13] = features[1:]
+    return torch.as_tensor(final_features).float()

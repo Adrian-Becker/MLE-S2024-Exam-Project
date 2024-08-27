@@ -13,9 +13,8 @@ import os
 
 import events as e
 from .callbacks import state_to_features, ACTION_TO_INDEX, EPS_START, EPS_END, EPS_DECAY
-from ..ours_k_q_learning_crates_reduced_enemy_information.callbacks import breadth_first_search, prepare_field_coins, \
-    determine_explosion_timer
-from ..ours_k_q_learning_crates_reduced_enemy_information.stats_logger import StatsLogger, Stat
+from features import breadth_first_search, prepare_field_coins, determine_explosion_timer
+from stats_logger import StatsLogger, Stat
 
 # This is only an example!
 Transition = namedtuple('Transition',
@@ -116,14 +115,14 @@ def add_custom_events(self, old_game_state: dict, self_action: str, new_game_sta
                 new_game_state['explosion_map'][new_game_state['self'][3]] == 0:
             events.append(ESCAPE_BOMB_EVENT)
     if e.BOMB_DROPPED in events:
-        if features_old[0] == 2:
+        if features_old[2] == 1:
             events.append(PLACED_BOMB_DESTROY_ONE_EVENT)
-        elif features_old[0] == 3:
+        elif features_old[3] == 1:
             events.append(PLACED_BOMB_DESTROY_MULTIPLE_EVENT)
-        elif features_old[0] == 0:
+        elif features_old[0] == 1:
             events.append(PLACED_INESCAPABLE_BOMB_EVENT)
 
-    if e.WAITED in events and (max(features_old[1:5]) > 0 or features_old[0] > 0):
+    if e.WAITED in events and (max(features_old[4:8]) > 0 or (features_old[1:4].max() > 0)):
         events.append(WAITED_WITHOUT_NEED_EVENT)
 
 
@@ -247,7 +246,7 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     features_old = state_to_features(last_game_state)
     self.transitions.append(
         Transition(features_old, torch.Tensor([ACTION_TO_INDEX[last_action]]).to(torch.int64),
-                   torch.Tensor([0, 0, 0, 0, 0, 0, 0, 0, 0, 0]), torch.Tensor([reward_from_events(self, events)])))
+                   torch.Tensor([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]), torch.Tensor([reward_from_events(self, events)])))
     # training
     train_batch(self)
 
