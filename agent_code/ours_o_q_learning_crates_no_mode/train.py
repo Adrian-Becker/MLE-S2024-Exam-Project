@@ -365,23 +365,20 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     self.stats_logger.add('p-enemy', prob_enemy_copy * 100)
     self.stats_logger.add('p-explo', prob_exploration * 100)
 
-    self.stats_logger.add('points', last_game_state['self'][1])
+    if self.round % 2 == 0:
+        # only track non exploration rounds
+        self.stats_logger.add('points', last_game_state['self'][1])
+        self.stats_logger.add('bombs', self.bombs_dropped)
+        self.stats_logger.add('invalid', self.invalid_moves / self.iteration_per_round * 100)
+        self.stats_logger.add('iteration', self.iteration_per_round)
+        self.stats_logger.add('rewards', self.total_rewards)
+        self.stats_logger.add('suicides', 1 if e.KILLED_SELF in events else 0)
+        self.stats_logger.add('kills', self.kills)
 
-    self.stats_logger.add('bombs', self.bombs_dropped)
     self.bombs_dropped = 0
-
-    self.stats_logger.add('invalid', self.invalid_moves / self.iteration_per_round * 100)
     self.invalid_moves = 0
-
-    self.stats_logger.add('iteration', self.iteration_per_round)
     self.iteration_per_round = 0
-
-    self.stats_logger.add('rewards', self.total_rewards)
     self.total_rewards = 0
-
-    self.stats_logger.add('suicides', 1 if e.KILLED_SELF in events else 0)
-
-    self.stats_logger.add('kills', self.kills)
     self.kills = 0
 
     self.stats_logger.output(self.round, self.iteration)
