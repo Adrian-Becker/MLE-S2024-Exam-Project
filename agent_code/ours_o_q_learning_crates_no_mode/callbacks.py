@@ -159,7 +159,7 @@ def state_to_features(game_state: dict) -> np.array:
 
     coins, min_distance_coins = determine_coin_value(x, y, game_state, explosion_timer)
     features.extend(coins)
-    if priority_marker < 0:
+    if min_distance_coins < 64 and priority_marker < 0:
         priority_marker = 1
 
     has_crates = False
