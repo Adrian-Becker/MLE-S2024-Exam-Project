@@ -823,6 +823,9 @@ def find_escape_path_danger_map(position, field, bomb_field, explosion_time, dan
     return math.inf
 
 def determine_trap_escape_direction_scored(x, y, game_state: dict, bomb_input, danger_map):
+    if danger_map[(x, y)] == 1000:
+        return 4, math.inf
+
     distances = np.array([
         find_escape_path_danger_map((x, y - 1), *bomb_input, danger_map, starting_time=1),
         find_escape_path_danger_map((x, y + 1), *bomb_input, danger_map, starting_time=1),
@@ -834,7 +837,7 @@ def determine_trap_escape_direction_scored(x, y, game_state: dict, bomb_input, d
     min_distance = distances.min()
     if min_distance < math.inf:
         return np.random.choice(np.flatnonzero(distances == min_distance)), min_distance
-    return moves
+    return 4, min_distance
 
 def determine_trap_escape_direction(x, y, game_state: dict, bomb_input, danger_map):
     distances = np.array([

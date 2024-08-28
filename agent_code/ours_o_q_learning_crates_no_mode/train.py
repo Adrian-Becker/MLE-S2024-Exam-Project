@@ -41,6 +41,8 @@ REPEATED_FIELD_EVENT = "Repeated Field"
 
 PLACE_BOMB_TARGET_CRATE_EVENT = "Place Bomb Target Crate"
 
+NOT_FLEEING_CORRECTLY_EVENT = "Not Fleeing Correctly"
+
 LEARNING_RATE = 0.1
 DISCOUNT_FACTOR = 0.99
 
@@ -178,8 +180,21 @@ def add_custom_events(self, old_game_state: dict, self_action: str, new_game_sta
             count_crates = count_destroyable_crates(x, y, old_game_state, explosion_timer_old)
             for _ in range(count_crates):
                 events.append(PLACE_BOMB_TARGET_CRATE_EVENT)
-    if e.WAITED in events and (max(features_old[1:5]) > 0 or features_old[0] > 0):
+    if e.WAITED in events and (max(features_old[1:21]) > 0 or features_old[0] > 0):
         events.append(WAITED_WITHOUT_NEED_EVENT)
+    if features_old[21] == 0 and max(features_old[1:5]) > 0:
+        if features_old[1] == 1:
+            if e.MOVED_UP not in events:
+                events.append(NOT_FLEEING_CORRECTLY_EVENT)
+        elif features_old[2] == 1:
+            if e.MOVED_DOWN not in events:
+                events.append(NOT_FLEEING_CORRECTLY_EVENT)
+        elif features_old[3] == 1:
+            if e.MOVED_LEFT not in events:
+                events.append(NOT_FLEEING_CORRECTLY_EVENT)
+        else:
+            if e.MOVED_RIGHT not in events:
+                events.append(NOT_FLEEING_CORRECTLY_EVENT)
 
 
 def learning_step(self, transition: Transition):
@@ -323,7 +338,7 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     self.transitions.append(
         Transition(state_to_features(last_game_state),
                    ACTION_TO_INDEX[last_action],
-                   (1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0), reward_from_events(self, events))
+                   (1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0), reward_from_events(self, events))
     )
 
     for _ in range(EPOCHS_PER_ROUND):
@@ -332,7 +347,7 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     self.iteration_per_round += 1
     self.round += 1
 
-    if False: #self.round % SYMMETRY_SYNC_RATE == 0:
+    if False:  # self.round % SYMMETRY_SYNC_RATE == 0:
         self.Q = sync_symmetries(self.Q)
         self.P = sync_symmetries(self.P)
         pass

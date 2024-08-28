@@ -86,8 +86,8 @@ def world_controller(world, n_rounds, *,
                 if max_score < world.agents[i].score:
                     max_score = world.agents[i].score
                     best_agent = i
-                print(world.agents[i].score)
             wins[best_agent] += 1
+            print(f"{world.agents[best_agent].name} won!")
 
         # Save video of last game
         if make_video:
@@ -111,7 +111,7 @@ def world_controller(world, n_rounds, *,
     if benchmark:
         for i in range(len(world.agents)):
             agent = world.agents[i]
-            print(agent.name + " has won " + "{:5.0f}".format(wins[i]) + " games!")
+            print(agent.name + " has won " + "{:5.0f}".format(wins[i]) + f" games, suicides = {world.agents[i].lifetime_statistics['suicides']}!")
 
 def main(argv=None):
     parser = ArgumentParser()

@@ -8,7 +8,7 @@ import numpy as np
 from features import determine_explosion_timer, count_destroyable_crates_and_enemies, create_danger_map, \
     determine_current_square, prepare_escape_path_fields, partially_fill, save_directions, determine_escape_direction, \
     determine_coin_value, determine_is_worth_to_move_crates, determine_crate_value, determine_is_worth_to_move_enemies, \
-    determine_enemy_value
+    determine_enemy_value, determine_trap_escape_direction
 
 ACTIONS = ['UP', 'DOWN', 'LEFT', 'RIGHT', 'WAIT', 'BOMB']
 ACTION_INDICES = np.array([0, 1, 2, 3, 4, 5]).astype(int)
@@ -46,7 +46,7 @@ enemies: 0-3;4, 2^4=16 (UP, DOWN, LEFT, RIGHT) 								                         
 = 40500
 """
 # FEATURE_SHAPE = (3, 3, 3, 3, 4, 5, 5, 5, len(ACTIONS))
-FEATURE_SHAPE = (4, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 4, len(ACTIONS))
+FEATURE_SHAPE = (4, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 5, len(ACTIONS))
 
 EPS_START = 0.2
 EPS_END = 0.05
@@ -155,7 +155,12 @@ def state_to_features(game_state: dict) -> np.array:
         features.extend(determine_escape_direction(x, y, game_state, bomb_input))
         priority_marker = 0
     else:
-        features.extend(save_directions(x, y, game_state, explosion_timer))
+        features.extend([0, 0, 0, 0])
+
+    direction = determine_trap_escape_direction(x, y, game_state, bomb_input, danger_map)
+    features.extend(direction)
+    if max(direction) > 0 and priority_marker < 0:
+        priority_marker = 4
 
     coins, min_distance_coins = determine_coin_value(x, y, game_state, explosion_timer)
     features.extend(coins)

@@ -182,10 +182,10 @@ def add_custom_events(self, old_game_state: dict, self_action: str, new_game_sta
             count_crates = count_destroyable_crates(x, y, old_game_state, explosion_timer_old)
             for _ in range(count_crates):
                 events.append(PLACE_BOMB_TARGET_CRATE_EVENT)
-    if e.WAITED in events and (features_old[1] < 4 or features_old[2] < 4 or
-                               features_old[3] < 4 or features_old[4] < 4 or features_old[0] > 0):
+    if e.WAITED in events and (features_old[1] < 4 or features_old[2] < 4 or features_old[3] < 4 or
+                               features_old[4] < 4 or features_old[5] < 4 or features_old[0] > 0):
         events.append(WAITED_WITHOUT_NEED_EVENT)
-    if features_old[5] == 0 and features_old[1] < 4:
+    if features_old[6] == 0 and features_old[1] < 4:
         if features_old[0] == 0:
             if e.MOVED_UP not in events:
                 events.append(NOT_FLEEING_CORRECTLY_EVENT)
@@ -294,23 +294,25 @@ def sync_symmetries(Q):
 
     for current_field in range(0, 4):
         for escape_direction in range(5):
-            for coin_direction in range(5):
-                for crate_direction in range(5):
-                    for enemy_direction in range(5):
-                        for priority_maker in range(0, 4):
-                            for action in ACTION_INDICES:
-                                value = 0
-                                for conversion in CONVERSIONS:
-                                    c_escape_direction = conversion[escape_direction]
-                                    c_coin_direction = conversion[coin_direction]
-                                    c_crate_direction = conversion[crate_direction]
-                                    c_enemy_direction = conversion[enemy_direction]
-                                    c_action = conversion[action]
+            for trap_direction in range(5):
+                for coin_direction in range(5):
+                    for crate_direction in range(5):
+                        for enemy_direction in range(5):
+                            for priority_maker in range(0, 4):
+                                for action in ACTION_INDICES:
+                                    value = 0
+                                    for conversion in CONVERSIONS:
+                                        c_escape_direction = conversion[escape_direction]
+                                        c_trap_direction = conversion[trap_direction]
+                                        c_coin_direction = conversion[coin_direction]
+                                        c_crate_direction = conversion[crate_direction]
+                                        c_enemy_direction = conversion[enemy_direction]
+                                        c_action = conversion[action]
 
-                                    value += Q[current_field][c_escape_direction][c_coin_direction] \
-                                        [c_crate_direction][c_enemy_direction][priority_maker][c_action]
-                                new_Q[current_field][escape_direction][coin_direction][crate_direction] \
-                                    [enemy_direction][priority_maker][action] = value / 6.0
+                                        value += Q[current_field][c_escape_direction][c_trap_direction][c_coin_direction] \
+                                            [c_crate_direction][c_enemy_direction][priority_maker][c_action]
+                                    new_Q[current_field][escape_direction][trap_direction][coin_direction][crate_direction] \
+                                        [enemy_direction][priority_maker][action] = value / 6.0
     return new_Q
 
 
@@ -323,7 +325,7 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     self.transitions.append(
         Transition(state_to_features(last_game_state),
                    ACTION_TO_INDEX[last_action],
-                   (3, 4, 4, 4, 4, 1), reward_from_events(self, events))
+                   (3, 4, 4, 4, 4, 4, 1), reward_from_events(self, events))
     )
 
     for _ in range(EPOCHS_PER_ROUND):
