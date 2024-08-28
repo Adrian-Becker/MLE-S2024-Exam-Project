@@ -112,7 +112,7 @@ def act(self, game_state: dict) -> str:
     best_action_index = np.array(list(map(lambda action: self.Q[self.last_features][action], ACTION_INDICES))).argmax()
     action = ACTIONS[best_action_index]
     if not self.train:
-        print(f"{action} {self.last_features}")
+        # print(f"{action} {self.last_features}")
         # print(self.Q[self.last_features])
         pass
     return action
@@ -158,7 +158,7 @@ def state_to_features(game_state: dict) -> np.array:
         features.append(determine_escape_direction_scored(x, y, game_state, bomb_input)[0])
         priority_marker = 0
     else:
-        features.append(save_directions_scored(x, y, game_state, explosion_timer))
+        features.append(4) #save_directions_scored(x, y, game_state, explosion_timer))
 
     coins, min_distance_coins = determine_coin_value_scored(x, y, game_state, explosion_timer)
     features.append(coins)

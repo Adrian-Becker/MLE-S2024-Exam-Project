@@ -123,12 +123,13 @@ def setup_training(self):
         Stat('points', 'points', True, 100, '{:2d}', '{:5.2f}', 32, ' '),
         Stat('P(copy enemy)', 'p-enemy', False, 1, '{:5.2f}', '', 36, '%'),
         Stat('P(exploration)', 'p-explo', False, 1, '{:5.2f}', '', 36, '%'),
-        Stat('bombs', 'bombs', True, 500, '{:3d}', '{:6.2f}', 31, ' '),
-        Stat('rewards', 'rewards', True, 500, '{:7d}', '{:9.2f}', 32, ' '),
-        Stat('iterations p. round', 'iteration', True, 500, '{:3d}', '{:6.2f}', 35, ' '),
-        Stat('invalid moves', 'invalid', True, 500, '{:5.2f}', '{:5.2f}', 35, '%'),
-        Stat('kills', 'kills', True, 500, '{:1d}', '{:4.2f}', 34, ' '),
-        Stat('suicides', 'suicides', True, 500, '{:1d}', '{:4.2f}', 34, ' ')
+        Stat('bombs', 'bombs', True, 100, '{:3d}', '{:6.2f}', 31, ' '),
+        Stat('rewards', 'rewards', True, 100, '{:7d}', '{:9.2f}', 32, ' '),
+        Stat('iterations p. round', 'iteration', True, 100, '{:3d}', '{:6.2f}', 35, ' '),
+        Stat('invalid moves', 'invalid', True, 100, '{:5.2f}', '{:5.2f}', 35, '%'),
+        Stat('kills', 'kills', True, 100, '{:1d}', '{:4.2f}', 34, ' '),
+        Stat('suicides', 'suicides', True, 100, '{:1d}', '{:4.2f}', 34, ' '),
+        Stat('repeated fields', 'repeated', True, 100, '{:5.2f}', '{:5.2f}', 31, '%')
     ])
 
     self.round = 0
@@ -139,6 +140,7 @@ def setup_training(self):
     self.invalid_moves = 0
     self.suicides = 0
     self.kills = 0
+    self.repeated = 0
     self.field_history = deque(maxlen=4)
 
     if not os.path.exists("tables"):
@@ -180,7 +182,8 @@ def add_custom_events(self, old_game_state: dict, self_action: str, new_game_sta
             count_crates = count_destroyable_crates(x, y, old_game_state, explosion_timer_old)
             for _ in range(count_crates):
                 events.append(PLACE_BOMB_TARGET_CRATE_EVENT)
-    if e.WAITED in events and (features_old[1] < 4 or features_old[0] > 0):
+    if e.WAITED in events and (features_old[1] < 4 or features_old[2] < 4 or
+                               features_old[3] < 4 or features_old[4] < 4 or features_old[0] > 0):
         events.append(WAITED_WITHOUT_NEED_EVENT)
     if features_old[5] == 0 and features_old[1] < 4:
         if features_old[0] == 0:
@@ -220,7 +223,7 @@ def handle_event_occurrence(self, old_game_state: dict, self_action: str, new_ga
 
     # state_to_features is defined in callbacks.py
     transition = Transition(features_old, action_old, features_new, rewards)
-    learning_step(self, transition)
+    # learning_step(self, transition)
     self.transitions.append(transition)
 
 
@@ -240,6 +243,8 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
 
     if new_game_state['self'][3] in self.field_history:
         events.append(REPEATED_FIELD_EVENT)
+        self.repeated += 1
+
     self.field_history.append(new_game_state['self'][3])
 
     handle_event_occurrence(self, old_game_state, self_action, new_game_state, events)
@@ -348,23 +353,20 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     if self.round % 2 == 0:
         # only track non exploration rounds
         self.stats_logger.add('points', last_game_state['self'][1])
+        self.stats_logger.add('bombs', self.bombs_dropped)
+        self.stats_logger.add('invalid', self.invalid_moves / self.iteration_per_round * 100)
+        self.stats_logger.add('iteration', self.iteration_per_round)
+        self.stats_logger.add('rewards', self.total_rewards)
+        self.stats_logger.add('suicides', 1 if e.KILLED_SELF in events else 0)
+        self.stats_logger.add('kills', self.kills)
+        self.stats_logger.add('repeated', self.repeated / self.iteration_per_round * 100)
 
-    self.stats_logger.add('bombs', self.bombs_dropped)
     self.bombs_dropped = 0
-
-    self.stats_logger.add('invalid', self.invalid_moves / self.iteration_per_round * 100)
     self.invalid_moves = 0
-
-    self.stats_logger.add('iteration', self.iteration_per_round)
     self.iteration_per_round = 0
-
-    self.stats_logger.add('rewards', self.total_rewards)
     self.total_rewards = 0
-
-    self.stats_logger.add('suicides', 1 if e.KILLED_SELF in events else 0)
-
-    self.stats_logger.add('kills', self.kills)
     self.kills = 0
+    self.repeated = 0
 
     self.stats_logger.output(self.round, self.iteration)
 
@@ -380,8 +382,8 @@ def reward_from_events(self, events: List[str]) -> int:
         e.KILLED_SELF: -10000,
         e.GOT_KILLED: -4000,
         e.INVALID_ACTION: -5000,
-        e.WAITED: 5000,
-        WAITED_WITHOUT_NEED_EVENT: -9000,
+        e.WAITED: 6000,
+        WAITED_WITHOUT_NEED_EVENT: -11000,
         e.BOMB_DROPPED: 1000,
         e.CRATE_DESTROYED: 1000,
         e.COIN_FOUND: 1000,
@@ -391,7 +393,7 @@ def reward_from_events(self, events: List[str]) -> int:
         PLACED_BOMB_DESTROY_ONE_EVENT: 2500,
         PLACED_BOMB_DESTROY_MULTIPLE_EVENT: 4000,
         PLACE_BOMB_TARGET_CRATE_EVENT: 10000,
-        REPEATED_FIELD_EVENT: -2000,
+        REPEATED_FIELD_EVENT: -4000,
         NOT_FLEEING_CORRECTLY_EVENT: -10000
     }
 
