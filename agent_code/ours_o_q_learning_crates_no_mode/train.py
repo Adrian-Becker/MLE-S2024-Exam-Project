@@ -398,8 +398,8 @@ def reward_from_events(self, events: List[str]) -> int:
         e.KILLED_SELF: -10000,
         e.GOT_KILLED: -4000,
         e.INVALID_ACTION: -5000,
-        e.WAITED: 5000,
-        WAITED_WITHOUT_NEED_EVENT: -9000,
+        e.WAITED: 6000,
+        WAITED_WITHOUT_NEED_EVENT: -11000,
         e.BOMB_DROPPED: 1000,
         e.CRATE_DESTROYED: 1000,
         e.COIN_FOUND: 1000,
@@ -409,7 +409,8 @@ def reward_from_events(self, events: List[str]) -> int:
         PLACED_BOMB_DESTROY_ONE_EVENT: 2500,
         PLACED_BOMB_DESTROY_MULTIPLE_EVENT: 4000,
         PLACE_BOMB_TARGET_CRATE_EVENT: 10000,
-        REPEATED_FIELD_EVENT: -2000
+        REPEATED_FIELD_EVENT: -4000,
+        NOT_FLEEING_CORRECTLY_EVENT: -10000
     }
 
     reward_sum = 0
