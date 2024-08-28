@@ -182,7 +182,7 @@ def add_custom_events(self, old_game_state: dict, self_action: str, new_game_sta
                 events.append(PLACE_BOMB_TARGET_CRATE_EVENT)
     if e.WAITED in events and (features_old[1] < 4 or features_old[0] > 0):
         events.append(WAITED_WITHOUT_NEED_EVENT)
-    if features_old[5] == 1 and features_old[1] < 4:
+    if features_old[5] == 0 and features_old[1] < 4:
         if features_old[0] == 0:
             if e.MOVED_UP not in events:
                 events.append(NOT_FLEEING_CORRECTLY_EVENT)
