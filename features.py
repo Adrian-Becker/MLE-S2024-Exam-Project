@@ -1,6 +1,10 @@
 import math
 import numpy as np
 
+MAX_ADDITIONAL_DISTANCE_COIN_BFS_SEARCH = 3
+MAX_ADDITIONAL_DISTANCE_CRATE_BFS_SEARCH = 3
+MAX_ADDITIONAL_DISTANCE_ENEMY_BFS_SEARCH = 3
+
 
 def find_distance_to_coin(position, field: np.array):
     """
@@ -127,6 +131,38 @@ def find_winnable_coins(field, coins, enemies):
     return targets
 
 
+def breadth_first_search_coins_scored(position, field, targets):
+    if field[position] != 0:
+        return math.inf, 0
+
+    todo = [position]
+    distance = {position: 1}
+
+    score = 0
+
+    min_distance = math.inf
+    max_distance = math.inf
+
+    while len(todo) > 0:
+        current = todo.pop(0)
+
+        if distance[current] > max_distance:
+            return min_distance, score
+        if targets[current] - distance[current] > 0:
+            score += 1
+            min_distance = min(min_distance, distance[current])
+            max_distance = min(max_distance, distance[current] + MAX_ADDITIONAL_DISTANCE_COIN_BFS_SEARCH)
+
+        x, y = current
+        neighbors = [(x, y) for (x, y) in [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)] if field[x, y] == 0]
+        for neighbor in neighbors:
+            if neighbor not in distance:
+                distance[neighbor] = distance[current] + 1
+                todo.append(neighbor)
+
+    return min_distance, score
+
+
 def breadth_first_search_coins(position, field, targets):
     if field[position] != 0:
         return math.inf
@@ -165,6 +201,27 @@ def determine_coin_value_vector(x, y, game_state: dict, explosion_timer):
     distances += 1
 
     return distances
+
+
+def determine_coin_value_scored(x, y, game_state: dict, explosion_timer):
+    field, _ = prepare_field_coins(game_state, explosion_timer)
+    targets = find_winnable_coins(field, game_state['coins'], game_state['others'])
+
+    field[game_state['self'][3]] = 1
+
+    distance_up, score_up = breadth_first_search_coins_scored((x, y - 1), field, targets)
+    distance_down, score_down = breadth_first_search_coins_scored((x, y + 1), field, targets)
+    distance_left, score_left = breadth_first_search_coins_scored((x - 1, y), field, targets)
+    distance_right, score_right = breadth_first_search_coins_scored((x + 1, y), field, targets)
+
+    distances = np.array([distance_up, distance_down, distance_left, distance_right])
+    min_distance = distances.min()
+
+    if min_distance < 64:
+        scores = np.array([score_up, score_down, score_left, score_right])
+        scores[distances > min_distance] = 0
+        return np.random.choice(np.flatnonzero(scores == scores.max())), min_distance
+    return 4, min_distance
 
 
 def determine_coin_value(x, y, game_state: dict, explosion_timer):
@@ -414,6 +471,17 @@ def determine_escape_direction_vector(x, y, game_state: dict, bomb_input):
     distances += 1
     return distances
 
+def determine_escape_direction_scored(x, y, game_state: dict, bomb_input):
+    distances = np.array([
+        find_shortest_escape_path((x, y - 1), *bomb_input),
+        find_shortest_escape_path((x, y + 1), *bomb_input),
+        find_shortest_escape_path((x - 1, y), *bomb_input),
+        find_shortest_escape_path((x + 1, y), *bomb_input),
+    ])
+    min_distance = distances.min()
+    if min_distance < math.inf:
+        return np.random.choice(np.flatnonzero(distances == min_distance)), min_distance
+    return 4, min_distance
 
 def determine_escape_direction(x, y, game_state: dict, bomb_input):
     distances = np.array([
@@ -430,6 +498,90 @@ def determine_escape_direction(x, y, game_state: dict, bomb_input):
     return moves
 
 
+def breadth_first_search_crates_scored(position, field, targets):
+    """
+    Calculates the distance to the nearest target using BFS.
+    :param field: 0 free tiles, 1 blocked, 2 target
+    :return distance to the nearest target|inf if no reachable target is present
+    """
+    position = (position[0], position[1])
+
+    if field[position] == 1:
+        return math.inf, 0
+
+    distance = {position: 1}
+    todo = [position]
+
+    score = 0
+    min_distance = math.inf
+    max_distance = math.inf
+
+    while len(todo) > 0:
+        current = todo.pop(0)
+
+        if distance[current] > max_distance:
+            return min_distance, score
+
+        if targets[current] == 1:
+            if distance[current] == 1:
+                continue
+            score += 1
+            min_distance = min(min_distance, distance[current])
+            max_distance = max(max_distance, distance[current] + MAX_ADDITIONAL_DISTANCE_CRATE_BFS_SEARCH)
+            continue
+
+        x, y = current
+        neighbors = [(x, y) for (x, y) in [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)] if field[x, y] == 0]
+        for neighbor in neighbors:
+            if neighbor not in distance:
+                distance[neighbor] = distance[current] + 1
+                todo.append(neighbor)
+
+    return min_distance, score
+
+
+def breadth_first_search_enemies_scored(position, field, targets):
+    """
+    Calculates the distance to the nearest target using BFS.
+    :param field: 0 free tiles, 1 blocked, 2 target
+    :return distance to the nearest target|inf if no reachable target is present
+    """
+    position = (position[0], position[1])
+
+    if field[position] == 1:
+        return math.inf, 0
+
+    distance = {position: 1}
+    todo = [position]
+
+    score = 0
+    min_distance = math.inf
+    max_distance = math.inf
+
+    while len(todo) > 0:
+        current = todo.pop(0)
+
+        if distance[current] > max_distance:
+            return min_distance, score
+
+        if targets[current] == 1:
+            if distance[current] == 1:
+                continue
+            score += 1
+            min_distance = min(min_distance, distance[current])
+            max_distance = max(max_distance, distance[current] + MAX_ADDITIONAL_DISTANCE_ENEMY_BFS_SEARCH)
+            continue
+
+        x, y = current
+        neighbors = [(x, y) for (x, y) in [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)] if field[x, y] == 0]
+        for neighbor in neighbors:
+            if neighbor not in distance:
+                distance[neighbor] = distance[current] + 1
+                todo.append(neighbor)
+
+    return min_distance, score
+
+
 def determine_crate_value_vector(x, y, game_state: dict, explosion_timer):
     field = np.clip(game_state['field'], -1, 1) * -1
     for other in game_state['others']:
@@ -437,6 +589,8 @@ def determine_crate_value_vector(x, y, game_state: dict, explosion_timer):
     field += game_state['explosion_map'].astype(int)
     field[explosion_timer != 1000] += 1
     field = np.clip(field, 0, 1)
+
+    field[game_state['self'][3]] = 1
 
     targets = np.clip(game_state['field'], 0, 1)
     targets[explosion_timer != 1000] = 0
@@ -452,6 +606,32 @@ def determine_crate_value_vector(x, y, game_state: dict, explosion_timer):
     return directions
 
 
+def determine_crate_value_scored(x, y, game_state: dict, explosion_timer):
+    field = np.clip(game_state['field'], -1, 1) * -1
+    for other in game_state['others']:
+        field[other[3]] = 1
+    field += game_state['explosion_map'].astype(int)
+    field[explosion_timer != 1000] += 1
+    field = np.clip(field, 0, 1)
+
+    targets = np.clip(game_state['field'], 0, 1)
+    targets[explosion_timer != 1000] = 0
+
+    distance_up, score_up = breadth_first_search_crates_scored((x, y - 1), field, targets)
+    distance_down, score_down = breadth_first_search_crates_scored((x, y + 1), field, targets)
+    distance_left, score_left = breadth_first_search_crates_scored((x - 1, y), field, targets)
+    distance_right, score_right = breadth_first_search_crates_scored((x + 1, y), field, targets)
+
+    distances = np.array([distance_up, distance_down, distance_left, distance_right])
+    min_distance = distances.min()
+
+    if min_distance < 64:
+        scores = np.array([score_up, score_down, score_left, score_right])
+        scores[distances > min_distance] = 0
+        return np.random.choice(np.flatnonzero(scores == scores.max())), min_distance
+    return 4, min_distance
+
+
 def determine_crate_value(x, y, game_state: dict, explosion_timer):
     field = np.clip(game_state['field'], -1, 1) * -1
     for other in game_state['others']:
@@ -459,6 +639,8 @@ def determine_crate_value(x, y, game_state: dict, explosion_timer):
     field += game_state['explosion_map'].astype(int)
     field[explosion_timer != 1000] += 1
     field = np.clip(field, 0, 1)
+
+    field[game_state['self'][3]] = 1
 
     targets = np.clip(game_state['field'], 0, 1)
     targets[explosion_timer != 1000] = 0
@@ -496,6 +678,44 @@ def determine_enemy_value(x, y, game_state: dict, explosion_timer):
         targets[other[3]] = 1
 
     return determine_best_direction(x, y, np.clip(field, 0, 1), targets)
+
+
+def determine_enemy_value_scored(x, y, game_state: dict, explosion_timer):
+    field = np.abs(game_state['field'])
+    field += game_state['explosion_map'].astype(int)
+    field[explosion_timer != 1000] += 1
+
+    targets = np.zeros_like(field)
+    for other in game_state['others']:
+        targets[other[3]] = 1
+
+    field[game_state['self'][3]] = 1
+
+    distance_up, score_up = breadth_first_search_enemies_scored((x, y - 1), field, targets)
+    distance_down, score_down = breadth_first_search_enemies_scored((x, y + 1), field, targets)
+    distance_left, score_left = breadth_first_search_enemies_scored((x - 1, y), field, targets)
+    distance_right, score_right = breadth_first_search_enemies_scored((x + 1, y), field, targets)
+
+    distances = np.array([distance_up, distance_down, distance_left, distance_right])
+    min_distance = distances.min()
+
+    if min_distance < 64:
+        scores = np.array([score_up, score_down, score_left, score_right])
+        scores[distances > min_distance] = 0
+        return np.random.choice(np.flatnonzero(scores == scores.max())), min_distance
+    return 4, min_distance
+
+def determine_is_worth_to_move_crates_scored(x, y, game_state: dict, count_crates, explosion_timer):
+    directions = determine_is_worth_to_move_crates(x, y, game_state, count_crates, explosion_timer)
+    if directions.max() > 0:
+        return np.random.choice(np.flatnonzero(directions == 1))
+    return 4
+
+def determine_is_worth_to_move_enemies_scored(x, y, game_state: dict, count_enemies, explosion_timer):
+    directions = determine_is_worth_to_move_enemies(x, y, game_state, count_enemies, explosion_timer)
+    if directions.max() > 0:
+        return np.random.choice(np.flatnonzero(directions == 1))
+    return 4
 
 
 def determine_is_worth_to_move_crates(x, y, game_state: dict, count_crates, explosion_timer):
@@ -602,6 +822,19 @@ def find_escape_path_danger_map(position, field, bomb_field, explosion_time, dan
                 todo.append(neighbor)
     return math.inf
 
+def determine_trap_escape_direction_scored(x, y, game_state: dict, bomb_input, danger_map):
+    distances = np.array([
+        find_escape_path_danger_map((x, y - 1), *bomb_input, danger_map, starting_time=1),
+        find_escape_path_danger_map((x, y + 1), *bomb_input, danger_map, starting_time=1),
+        find_escape_path_danger_map((x - 1, y), *bomb_input, danger_map, starting_time=1),
+        find_escape_path_danger_map((x + 1, y), *bomb_input, danger_map, starting_time=1),
+    ])
+    moves = np.array([0, 0, 0, 0])
+
+    min_distance = distances.min()
+    if min_distance < math.inf:
+        return np.random.choice(np.flatnonzero(distances == min_distance)), min_distance
+    return moves
 
 def determine_trap_escape_direction(x, y, game_state: dict, bomb_input, danger_map):
     distances = np.array([
@@ -617,6 +850,19 @@ def determine_trap_escape_direction(x, y, game_state: dict, bomb_input, danger_m
         moves[distances == min_distance] = 1
     return moves
 
+def save_directions_scored(x, y, game_state, explosion_timer):
+    field, _ = prepare_field_coins(game_state, explosion_timer)
+    positions = np.array([
+        1 if field[x, y - 1] == 0 else 0,
+        1 if field[x, y + 1] == 0 else 0,
+        1 if field[x - 1, y] == 0 else 0,
+        1 if field[x + 1, y] == 0 else 0
+    ])
+
+    max_position = positions.max()
+    if max_position > 0:
+        return np.random.choice(np.flatnonzero(positions == 1))
+    return 4
 
 def save_directions(x, y, game_state, explosion_timer):
     field, _ = prepare_field_coins(game_state, explosion_timer)
