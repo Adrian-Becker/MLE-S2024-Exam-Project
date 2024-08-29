@@ -10,7 +10,8 @@ from features import determine_explosion_timer, count_destroyable_crates_and_ene
     determine_coin_value, determine_is_worth_to_move_crates, determine_crate_value, determine_is_worth_to_move_enemies, \
     determine_enemy_value, determine_escape_direction_scored, save_directions_scored, determine_coin_value_scored, \
     determine_is_worth_to_move_crates_scored, determine_crate_value_scored, determine_is_worth_to_move_enemies_scored, \
-    determine_enemy_value_scored, determine_trap_escape_direction_scored, determine_trap_escape_direction_improved
+    determine_enemy_value_scored, determine_trap_escape_direction_scored, determine_trap_escape_direction_improved, \
+    determine_trap_enemy_direction
 
 ACTIONS = ['UP', 'DOWN', 'LEFT', 'RIGHT', 'WAIT', 'BOMB']
 ACTION_INDICES = np.array([0, 1, 2, 3, 4, 5]).astype(int)
@@ -92,10 +93,16 @@ def determine_next_action(game_state: dict, Q) -> str:
     return ACTIONS[best_action_index]
 
 def action_from_features(features):
-    print(features)
+    #print(features)
     marker = features[6]
     if marker == 0:
         return features[1]
+    if features[7] != 4:
+        if features[7] == 5:
+            if features[0] > 1:
+                return 5
+        else:
+            return features[7]
     if marker == 1:
         return features[3]
     if marker == 2:
@@ -205,8 +212,12 @@ def state_to_features(game_state: dict) -> np.array:
         worth_move = determine_is_worth_to_move_crates_scored(x, y, game_state, count_crates, explosion_timer)
         features.append(worth_move)
         has_crates = True
-        if worth_move < 4 and priority_marker < 0:
-            priority_marker = 2
+        if priority_marker < 0:
+            if worth_move < 4:
+                priority_marker = 2
+            elif current_square > 1:
+                priority_marker = 2
+
 
     if not has_crates:
         crates, min_distance_crates = determine_crate_value_scored(x, y, game_state, explosion_timer)
@@ -236,5 +247,7 @@ def state_to_features(game_state: dict) -> np.array:
 
     priority_marker = max(priority_marker, 0)
     features.append(priority_marker)
+
+    features.append(determine_trap_enemy_direction(game_state, explosion_timer))
 
     return tuple(features)

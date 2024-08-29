@@ -6,6 +6,7 @@ MAX_ADDITIONAL_DISTANCE_CRATE_BFS_SEARCH = 3
 MAX_ADDITIONAL_DISTANCE_ENEMY_BFS_SEARCH = 3
 
 SHOULD_ESCAPE_THRESHOLD = 1
+TRAP_FOLLOW_THRESHOLD = 0
 
 
 def find_distance_to_coin(position, field: np.array):
@@ -111,10 +112,18 @@ def discover_coins(enemy, field, targets):
     todo = [enemy[3]]
     distance = {enemy[3]: 0}
 
+    coins = []
+
     while len(todo) > 0:
         current = todo.pop(0)
-        if targets[current] > 0:
+        if targets[current] > 0 and current not in coins:
             targets[current] = min(targets[current], distance[current])
+            todo = [current]
+            distance = {current: distance[current]}
+            for coin in coins:
+                distance[coin] = math.inf
+            coins.append(current)
+            continue
 
         x, y = current
         neighbors = [(x, y) for (x, y) in [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)] if field[x, y] == 0]
@@ -746,7 +755,7 @@ def count_and_filter_destroyable_crates(x, y, game_state: dict, explosion_timer,
 
 
 def count_destroyable_crates_directions(x, y, game_state: dict, explosion_timer, count_crates):
-    if game_state['field'][x, y] != 0:
+    if game_state['field'][x, y] != 0 or game_state['explosion_map'][x, y] != 0 or explosion_timer[x, y] != 1000:
         return [0, 0, 0, 0]
     return [count_and_filter_destroyable_crates(x, y - 1, game_state, explosion_timer, count_crates),
             count_and_filter_destroyable_crates(x, y + 1, game_state, explosion_timer, count_crates),
@@ -1194,7 +1203,7 @@ def determine_trap_field(game_state, field, explosion_timer, victim, attackers):
                 else:
                     time_to_escape = determine_time_to_escape(victim, (x, y), field)
                     if time_to_escape < math.inf:
-                        counter_field[x, y] -=  time_to_escape
+                        counter_field[x, y] -= time_to_escape
                     else:
                         counter_field[x, y] = -1000
     return counter_field
@@ -1219,3 +1228,53 @@ def determine_trap_escape_direction_improved(game_state, explosion_timer):
         return np.random.choice(np.flatnonzero(time_to_escape == time_to_escape.min()))
     else:
         return 4
+
+
+def find_path_to_trap(position, field, target):
+    if field[position] != 0:
+        return math.inf
+
+    todo = [position]
+    distances = {position: 1}
+
+    while len(todo) > 0:
+        current = todo.pop(0)
+        if target[current] <= TRAP_FOLLOW_THRESHOLD:
+            return distances[current]
+
+        x, y = current
+        neighbors = [(x, y) for (x, y) in [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)] if field[x, y] == 0]
+        for neighbor in neighbors:
+            if neighbor not in distances:
+                distances[neighbor] = distances[position] + 1
+                todo.append(neighbor)
+    return math.inf
+
+
+def determine_trap_enemy_direction(game_state, explosion_timer):
+    field, _ = prepare_field_coins(game_state, explosion_timer)
+
+    result = np.ones_like(field) * 1000
+
+    attackers = [game_state['self']]
+    for victim in game_state['others']:
+        trap_field = determine_trap_field(game_state, field, explosion_timer, victim[3], attackers)
+        for x in range(17):
+            for y in range(17):
+                result[x, y] = min(result[x, y], trap_field[x, y])
+
+    position = game_state['self'][3]
+    x, y = position
+    if result[position] <= 0:
+        return 5
+
+    distances = np.array([
+        find_path_to_trap((x, y - 1), field, result),
+        find_path_to_trap((x, y + 1), field, result),
+        find_path_to_trap((x - 1, y), field, result),
+        find_path_to_trap((x + 1, y), field, result)
+    ])
+
+    if min(distances) < math.inf:
+        return np.random.choice(np.flatnonzero(distances == distances.min()))
+    return 4

@@ -112,6 +112,7 @@ def world_controller(world, n_rounds, *,
         for i in range(len(world.agents)):
             agent = world.agents[i]
             print(agent.name + " has won " + "{:5.0f}".format(wins[i]) + f" games, suicides = {world.agents[i].lifetime_statistics['suicides']}!")
+            print(agent.lifetime_statistics)
 
 def main(argv=None):
     parser = ArgumentParser()
