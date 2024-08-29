@@ -92,6 +92,7 @@ def determine_next_action(game_state: dict, Q) -> str:
     return ACTIONS[best_action_index]
 
 def action_from_features(features):
+    print(features)
     marker = features[6]
     if marker == 0:
         return features[1]
@@ -124,7 +125,7 @@ def act(self, game_state: dict) -> str:
     :param game_state: The dictionary that describes everything on the board.
     :return: The action to take as a string.
     """
-    #return ACTIONS[action_from_features(state_to_features(game_state))]
+    return ACTIONS[action_from_features(state_to_features(game_state))]
 
     random_prob = EPS_END + (EPS_START - EPS_END) * math.exp(-1. * self.iteration / EPS_DECAY)
     if self.train and random.random() < random_prob and self.round % 2 == 0:
