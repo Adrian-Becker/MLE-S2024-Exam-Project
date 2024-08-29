@@ -5,6 +5,8 @@ MAX_ADDITIONAL_DISTANCE_COIN_BFS_SEARCH = 3
 MAX_ADDITIONAL_DISTANCE_CRATE_BFS_SEARCH = 3
 MAX_ADDITIONAL_DISTANCE_ENEMY_BFS_SEARCH = 3
 
+SHOULD_ESCAPE_THRESHOLD = 1
+
 
 def find_distance_to_coin(position, field: np.array):
     """
@@ -531,7 +533,6 @@ def breadth_first_search_crates_scored(position, field, game_state, explosion_ti
         if distance[current] > min_distance:
             return min_distance, max_score
 
-
         neighbors = [(x, y) for (x, y) in [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)] if field[x, y] == 0]
         for neighbor in neighbors:
             if neighbor not in distance:
@@ -714,8 +715,6 @@ def determine_is_worth_to_move_crates_scored(x, y, game_state: dict, count_crate
     max_double_directions = double_directions.max()
 
     max_destroy = max(max_directions, max_double_directions)
-
-    #print(max_destroy, count_crates, max_directions == max_destroy)
 
     if max_destroy <= count_crates:
         return 4
@@ -1086,3 +1085,137 @@ def state_to_features_for_q_learning(game_state: dict) -> np.array:
                 dposition] == 1000 and game_state['explosion_map'][dposition] == 0 else 0)
 
     return tuple(features)
+
+
+def mark_dangerous_bomb_spots(x, y, game_state):
+    danger_field = np.zeros_like(game_state['field'])
+    field = game_state['field']
+
+    for dx in range(1, min(4, 17 - x)):
+        if field[x + dx, y] == -1:
+            break
+        if field[x + dx, y] == 0:
+            danger_field[x + dx, y] = 1
+
+    for dx in range(1, min(4, x + 1)):
+        if field[x - dx, y] == -1:
+            break
+        if field[x - dx, y] == 0:
+            danger_field[x - dx, y] = 1
+
+    for dy in range(1, min(4, 17 - y)):
+        if field[x, y + dy] == -1:
+            break
+        if field[x, y + dy] == 0:
+            danger_field[x, y + dy] = 1
+
+    for dy in range(1, min(4, y + 1)):
+        if field[x, y - dy] == -1:
+            break
+        if field[x, y - dy] == 0:
+            danger_field[x, y - dy] = 1
+
+    return danger_field
+
+
+def mark_reachable(position, field, marked_field, counter_field):
+    todo = [position]
+    distances = {position: 0}
+
+    while len(todo) > 0:
+        current = todo.pop(0)
+        if marked_field[current] == 1:
+            counter_field[current] = min(counter_field[current], distances[current])
+
+        x, y = current
+        neighbors = [(x, y) for (x, y) in [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)] if field[x, y] == 0]
+        for neighbor in neighbors:
+            if neighbor not in distances:
+                distances[neighbor] = distances[current] + 1
+                todo.append(neighbor)
+
+
+def determine_could_escape(position, bomb, time, game_state, explosion_time):
+    escape_info = prepare_escape_path_fields(game_state)
+    mark_bomb(game_state['field'], escape_info[2], 3 + time, bomb, True)
+
+    return find_shortest_escape_path(position, *escape_info, True, starting_distance=time) < math.inf
+
+
+def find_trapped_fields(position, bomb, field):
+    field = np.copy(field)
+    field[bomb] = 1
+
+    target = np.zeros_like(field)
+    todo = [position]
+    done = [position]
+    while len(todo) > 0:
+        current = todo.pop(0)
+        target[current] = 1
+        x, y = current
+        neighbors = [(x, y) for (x, y) in [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)] if field[x, y] == 0]
+        for neighbor in neighbors:
+            if neighbor not in done:
+                done.append(neighbor)
+                todo.append(neighbor)
+    return target
+
+
+def determine_time_to_escape(position, bomb, field):
+    target = find_trapped_fields(position, bomb, field)
+
+    todo = [position]
+    distances = {position: 0}
+
+    while len(todo) > 0:
+        current = todo.pop(0)
+        if target[current] < 1:
+            return distances[current]
+
+        x, y = current
+        neighbors = [(x, y) for (x, y) in [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)] if field[x, y] == 0]
+        for neighbor in neighbors:
+            if neighbor not in distances:
+                distances[neighbor] = distances[current] + 1
+                todo.append(neighbor)
+    return math.inf
+
+
+def determine_trap_field(game_state, field, explosion_timer, victim, attackers):
+    marked_field = mark_dangerous_bomb_spots(*victim, game_state)
+    counter_field = np.ones_like(marked_field) * 1000
+    for other in attackers:
+        mark_reachable(other[3], field, marked_field, counter_field)
+    for x in range(17):
+        for y in range(17):
+            if counter_field[x, y] != 1000:
+                if determine_could_escape(victim, (x, y), counter_field[x, y], game_state, explosion_timer):
+                    counter_field[x, y] = 1000
+                else:
+                    time_to_escape = determine_time_to_escape(victim, (x, y), field)
+                    if time_to_escape < math.inf:
+                        counter_field[x, y] -=  time_to_escape
+                    else:
+                        counter_field[x, y] = -1000
+    return counter_field
+
+
+def determine_trap_escape_direction_improved(game_state, explosion_timer):
+    victim = game_state['self'][3]
+    attackers = game_state['others']
+
+    field, _ = prepare_field_coins(game_state, explosion_timer)
+    trap_field = determine_trap_field(game_state, field, explosion_timer, victim, attackers)
+    trap_field[trap_field == -1000] = 1000
+    if trap_field.min() <= SHOULD_ESCAPE_THRESHOLD:
+        bomb = np.unravel_index(np.argmin(trap_field, axis=None), trap_field.shape)
+        x, y = victim
+        time_to_escape = np.array([
+            math.inf if field[x, y - 1] != 0 else determine_time_to_escape((x, y - 1), bomb, field),
+            math.inf if field[x, y + 1] != 0 else determine_time_to_escape((x, y + 1), bomb, field),
+            math.inf if field[x - 1, y] != 0 else determine_time_to_escape((x - 1, y), bomb, field),
+            math.inf if field[x + 1, y] != 0 else determine_time_to_escape((x + 1, y), bomb, field),
+        ])
+        return np.random.choice(np.flatnonzero(time_to_escape == time_to_escape.min()))
+    else:
+        return 4

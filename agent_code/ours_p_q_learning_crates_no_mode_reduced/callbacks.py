@@ -10,7 +10,7 @@ from features import determine_explosion_timer, count_destroyable_crates_and_ene
     determine_coin_value, determine_is_worth_to_move_crates, determine_crate_value, determine_is_worth_to_move_enemies, \
     determine_enemy_value, determine_escape_direction_scored, save_directions_scored, determine_coin_value_scored, \
     determine_is_worth_to_move_crates_scored, determine_crate_value_scored, determine_is_worth_to_move_enemies_scored, \
-    determine_enemy_value_scored, determine_trap_escape_direction_scored
+    determine_enemy_value_scored, determine_trap_escape_direction_scored, determine_trap_escape_direction_improved
 
 ACTIONS = ['UP', 'DOWN', 'LEFT', 'RIGHT', 'WAIT', 'BOMB']
 ACTION_INDICES = np.array([0, 1, 2, 3, 4, 5]).astype(int)
@@ -190,11 +190,10 @@ def state_to_features(game_state: dict) -> np.array:
     else:
         features.append(4)  # save_directions_scored(x, y, game_state, explosion_timer))
 
-    direction, min_distance = determine_trap_escape_direction_scored(x, y, game_state, bomb_input, danger_map)
-    #features.append(direction)
-    features.append(4)
-    #if direction < 4 and priority_marker < 0 and danger_map[x, y] < TRAP_FLEEING_THRESHOLD:
-    #    priority_marker = 4
+    direction = determine_trap_escape_direction_improved(game_state, explosion_timer)
+    features.append(direction)
+    if direction < 4 and priority_marker < 0:
+        priority_marker = 4
 
     coins, min_distance_coins = determine_coin_value_scored(x, y, game_state, explosion_timer)
     features.append(coins)
