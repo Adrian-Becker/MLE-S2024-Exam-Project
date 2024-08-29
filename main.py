@@ -87,7 +87,7 @@ def world_controller(world, n_rounds, *,
                     max_score = world.agents[i].score
                     best_agent = i
             wins[best_agent] += 1
-            print(f"{world.agents[best_agent].name} won!")
+            print(f"{world.agents[best_agent].name} won ({max_score})!")
 
         # Save video of last game
         if make_video:

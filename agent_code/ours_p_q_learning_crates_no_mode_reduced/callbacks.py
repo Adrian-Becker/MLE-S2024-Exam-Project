@@ -22,7 +22,7 @@ ACTIONS_PROBABILITIES = [0.2, 0.2, 0.2, 0.2, 0.195, 0.005]
 WIDTH = 17
 HEIGHT = 17
 
-TRAP_FLEEING_THRESHOLD = 2
+TRAP_FLEEING_THRESHOLD = 3
 
 """
 state vector: 
@@ -91,6 +91,32 @@ def determine_next_action(game_state: dict, Q) -> str:
 
     return ACTIONS[best_action_index]
 
+def action_from_features(features):
+    marker = features[6]
+    if marker == 0:
+        return features[1]
+    if marker == 1:
+        return features[3]
+    if marker == 2:
+        if features[4] == 4:
+            if features[0] > 1:
+                return 5
+            else:
+                return 4
+        else:
+            return features[4]
+    if marker == 3:
+        if features[5] == 4:
+            if features[0] > 1:
+                return 5
+            else:
+                return 4
+        else:
+            return features[5]
+    if marker == 4:
+        return features[2]
+    print("WEIRD")
+    return 4
 
 def act(self, game_state: dict) -> str:
     """
@@ -98,6 +124,8 @@ def act(self, game_state: dict) -> str:
     :param game_state: The dictionary that describes everything on the board.
     :return: The action to take as a string.
     """
+    #return ACTIONS[action_from_features(state_to_features(game_state))]
+
     random_prob = EPS_END + (EPS_START - EPS_END) * math.exp(-1. * self.iteration / EPS_DECAY)
     if self.train and random.random() < random_prob and self.round % 2 == 0:
         features = state_to_features(game_state)
@@ -113,8 +141,8 @@ def act(self, game_state: dict) -> str:
     best_action_index = np.array(list(map(lambda action: self.Q[self.last_features][action], ACTION_INDICES))).argmax()
     action = ACTIONS[best_action_index]
     if not self.train:
-        # print(f"{action} {self.last_features}")
-        # print(self.Q[self.last_features])
+        #print(f"{action} {self.last_features}")
+        #print(self.Q[self.last_features])
         pass
     return action
 
@@ -162,9 +190,10 @@ def state_to_features(game_state: dict) -> np.array:
         features.append(4)  # save_directions_scored(x, y, game_state, explosion_timer))
 
     direction, min_distance = determine_trap_escape_direction_scored(x, y, game_state, bomb_input, danger_map)
-    features.append(direction)
-    if direction < 4 and priority_marker < 0:
-        priority_marker = 4
+    #features.append(direction)
+    features.append(4)
+    #if direction < 4 and priority_marker < 0 and danger_map[x, y] < TRAP_FLEEING_THRESHOLD:
+    #    priority_marker = 4
 
     coins, min_distance_coins = determine_coin_value_scored(x, y, game_state, explosion_timer)
     features.append(coins)
@@ -197,6 +226,12 @@ def state_to_features(game_state: dict) -> np.array:
         enemies, min_distance_enemies = determine_enemy_value_scored(x, y, game_state, explosion_timer)
         features.append(enemies)
         if enemies < 4 and priority_marker < 0:
+            priority_marker = 3
+
+    if priority_marker < 0 and current_square > 1:
+        if count_crates > 0:
+            priority_marker = 2
+        else:
             priority_marker = 3
 
     priority_marker = max(priority_marker, 0)
