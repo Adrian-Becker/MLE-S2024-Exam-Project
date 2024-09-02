@@ -52,9 +52,9 @@ enemies: 0-3;4, 2^4=16 (UP, DOWN, LEFT, RIGHT) 								                         
 # FEATURE_SHAPE = (3, 3, 3, 3, 4, 5, 5, 5, len(ACTIONS))
 FEATURE_SHAPE = (4, 5, 5, 5, 5, 5, 5, 6, 2, 2, 2, 2, len(ACTIONS))
 
-EPS_START = 0.2
+EPS_START = 0.5
 EPS_END = 0.0
-EPS_DECAY = 40000
+EPS_DECAY = 400000
 
 
 def setup(self):
@@ -84,7 +84,7 @@ def setup(self):
             # print(self.Q)
             pass
         print(f"Loaded {file_prefix}")
-        print(self.Q[3, 4, 4, 4, 4, 4, 1, 4, 1, 1, 1, 1])
+        print(self.Q[3, 4, 4, 4, 4, 4, 4, 5, 0, 0, 0, 0])
 
 
 def determine_next_action(game_state: dict, Q) -> str:
@@ -104,9 +104,13 @@ def get_feature_string(features):
                 ["up", "down", "left", "right", "no direction"],
                 ["up", "down", "left", "right", "no direction"],
                 ["flee", "coin", "crate", "enemy", "trap fleeing"],
-                ["up", "down", "left", "right", "no direction", "active trap"]]
+                ["up", "down", "left", "right", "no direction", "active trap"],
+                ["danger", "no danger"],
+                ["danger", "no danger"],
+                ["danger", "no danger"],
+                ["danger", "no danger"]]
     feature_list = ["Current Square", "Bomb Direction", "Trap Fleeing Direction", "Coin Direction", "Crate Direction",
-                    "Enemy Direction", "Priority Marker", "Trap Setting Direction"]
+                    "Enemy Direction", "Priority Marker", "Trap Setting Direction", "UP", "DOWN", "LEFT", "RIGHT"]
     for idx in range(len(features)):
         str += f"{feature_list[idx]}: {str_list[idx][features[idx]]}"
         if idx is not len(features) - 1:
