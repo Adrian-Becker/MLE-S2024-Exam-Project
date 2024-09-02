@@ -235,6 +235,29 @@ def determine_coin_value_scored(x, y, game_state: dict, explosion_timer):
     return 4, min_distance
 
 
+def determine_coin_value_scored_reward(x, y, game_state: dict, explosion_timer):
+    field, _ = prepare_field_coins(game_state, explosion_timer)
+    targets = find_winnable_coins(field, game_state['coins'], game_state['others'])
+
+    field[game_state['self'][3]] = 1
+
+    distance_up, score_up = breadth_first_search_coins_scored((x, y - 1), field, targets)
+    distance_down, score_down = breadth_first_search_coins_scored((x, y + 1), field, targets)
+    distance_left, score_left = breadth_first_search_coins_scored((x - 1, y), field, targets)
+    distance_right, score_right = breadth_first_search_coins_scored((x + 1, y), field, targets)
+
+    distances = np.array([distance_up, distance_down, distance_left, distance_right])
+    min_distance = distances.min()
+
+    if min_distance < 64:
+        scores = np.array([score_up, score_down, score_left, score_right])
+        scores[distances > min_distance] = 0
+        results = np.array([0, 0, 0, 0])
+        results[scores == scores.max()] = 1
+        return results
+    return np.array([0, 0, 0, 0])
+
+
 def determine_coin_value(x, y, game_state: dict, explosion_timer):
     field, _ = prepare_field_coins(game_state, explosion_timer)
     targets = find_winnable_coins(field, game_state['coins'], game_state['others'])
@@ -640,6 +663,31 @@ def determine_crate_value_scored(x, y, game_state: dict, explosion_timer):
     return 4, min_distance
 
 
+def determine_crate_value_scored_reward(x, y, game_state: dict, explosion_timer):
+    field = np.abs(game_state['field'])
+    for other in game_state['others']:
+        field[other[3]] = 1
+    field += game_state['explosion_map'].astype(int)
+    field[explosion_timer != 1000] += 1
+    field = np.clip(field, 0, 1)
+
+    distance_up, score_up = breadth_first_search_crates_scored((x, y - 1), field, game_state, explosion_timer)
+    distance_down, score_down = breadth_first_search_crates_scored((x, y + 1), field, game_state, explosion_timer)
+    distance_left, score_left = breadth_first_search_crates_scored((x - 1, y), field, game_state, explosion_timer)
+    distance_right, score_right = breadth_first_search_crates_scored((x + 1, y), field, game_state, explosion_timer)
+
+    distances = np.array([distance_up, distance_down, distance_left, distance_right])
+    min_distance = distances.min()
+
+    if min_distance < 64:
+        scores = np.array([score_up, score_down, score_left, score_right])
+        scores[distances > min_distance] = 0
+        results = np.array([0, 0, 0, 0])
+        results[scores == scores.max()] = 1
+        return results
+    return np.array([0, 0, 0, 0])
+
+
 def determine_crate_value(x, y, game_state: dict, explosion_timer):
     field = np.clip(game_state['field'], -1, 1) * -1
     for other in game_state['others']:
@@ -736,10 +784,10 @@ def determine_is_worth_to_move_crates_scored(x, y, game_state: dict, count_crate
 
 def count_destroyable_crates_double_move_directions(x, y, game_state: dict, explosion_timer, count_crates):
     return count_destroyable_crates_directions(x, y, game_state, explosion_timer, count_crates), \
-        [max(count_destroyable_crates_directions(x, y - 1, game_state, explosion_timer, count_crates)),
-         max(count_destroyable_crates_directions(x, y + 1, game_state, explosion_timer, count_crates)),
-         max(count_destroyable_crates_directions(x - 1, y, game_state, explosion_timer, count_crates)),
-         max(count_destroyable_crates_directions(x + 1, y, game_state, explosion_timer, count_crates))]
+           [max(count_destroyable_crates_directions(x, y - 1, game_state, explosion_timer, count_crates)),
+            max(count_destroyable_crates_directions(x, y + 1, game_state, explosion_timer, count_crates)),
+            max(count_destroyable_crates_directions(x - 1, y, game_state, explosion_timer, count_crates)),
+            max(count_destroyable_crates_directions(x + 1, y, game_state, explosion_timer, count_crates))]
 
 
 def count_and_filter_destroyable_crates(x, y, game_state: dict, explosion_timer, count_crates):

@@ -11,7 +11,10 @@ import numpy as np
 
 import events as e
 from .callbacks import state_to_features, ACTION_TO_INDEX, ACTION_INDICES, EPS_START, EPS_END, EPS_DECAY
-from features import breadth_first_search, prepare_field_coins, determine_explosion_timer, count_destroyable_crates
+from features import breadth_first_search, prepare_field_coins, determine_explosion_timer, count_destroyable_crates, \
+    determine_coin_value_scored_reward, determine_crate_value_scored_reward
+
+from rewards import distance_to_nearest_bomb
 
 from .history import TransitionHistory, Transition
 
@@ -48,8 +51,17 @@ NOT_FLEEING_CORRECTLY_EVENT = "Not Fleeing Correctly"
 FOLLOWED_MARKER_EVENT = "Followed Marker"
 DID_NOT_FOLLOW_MARKER_EVENT = "Did not Follow Marker"
 
+MOVED_AWAY_FROM_BOMB_EVENT = "Moved away from bomb"
+MOVED_TOWARDS_BOMB_EVENT = "Moved towards bomb"
+
+INCREASED_DESTROYABLE_CRATES_COUNT = "Increased destroyable crates count"
+DECREASED_DESTROYABLE_CRATES_COUNT = "Decreased destroyable crates count"
+
+MOVED_TOWARDS_CRATE_EVENT = "Moved Towards Crate"
+MOVED_AWAY_FROM_CRATE_EVENT = "Moved Away from Crate"
+
 LEARNING_RATE = 0.1
-DISCOUNT_FACTOR = 0.5
+DISCOUNT_FACTOR = 0.9
 
 SYMMETRY_SYNC_RATE = 5
 
@@ -125,16 +137,16 @@ def setup_training(self):
     self.P = np.copy(self.Q)
     self.transitions = TransitionHistory(TRANSITION_HISTORY_SIZE)
     self.stats_logger = StatsLogger([
-        Stat('points', 'points', True, 100, '{:2d}', '{:5.2f}', 32, ' '),
+        Stat('points', 'points', True, 50, '{:2d}', '{:5.2f}', 32, ' '),
         Stat('P(copy enemy)', 'p-enemy', False, 1, '{:5.2f}', '', 36, '%'),
         Stat('P(exploration)', 'p-explo', False, 1, '{:5.2f}', '', 36, '%'),
-        Stat('bombs', 'bombs', True, 100, '{:3d}', '{:6.2f}', 31, ' '),
-        Stat('rewards', 'rewards', True, 100, '{:7d}', '{:9.2f}', 32, ' '),
-        Stat('iterations p. round', 'iteration', True, 100, '{:3d}', '{:6.2f}', 35, ' '),
-        Stat('invalid moves', 'invalid', True, 100, '{:5.2f}', '{:5.2f}', 35, '%'),
-        Stat('kills', 'kills', True, 100, '{:1d}', '{:4.2f}', 34, ' '),
-        Stat('suicides', 'suicides', True, 100, '{:1d}', '{:4.2f}', 34, ' '),
-        Stat('repeated fields', 'repeated', True, 100, '{:5.2f}', '{:5.2f}', 31, '%')
+        Stat('bombs', 'bombs', True, 50, '{:3d}', '{:6.2f}', 31, ' '),
+        Stat('rewards', 'rewards', True, 50, '{:7d}', '{:9.2f}', 32, ' '),
+        Stat('iterations p. round', 'iteration', True, 50, '{:3d}', '{:6.2f}', 35, ' '),
+        Stat('invalid moves', 'invalid', True, 50, '{:5.2f}', '{:5.2f}', 35, '%'),
+        Stat('kills', 'kills', True, 50, '{:1d}', '{:4.2f}', 34, ' '),
+        Stat('suicides', 'suicides', True, 50, '{:1d}', '{:4.2f}', 34, ' '),
+        Stat('repeated fields', 'repeated', True, 50, '{:5.2f}', '{:5.2f}', 31, '%')
     ])
 
     self.round = 0
@@ -162,61 +174,7 @@ def add_custom_events(self, old_game_state: dict, self_action: str, new_game_sta
     explosion_timer_old = determine_explosion_timer(old_game_state)
     explosion_timer_new = determine_explosion_timer(new_game_state)
 
-    if e.COIN_COLLECTED not in events and len(old_game_state['coins']) > 0 and len(new_game_state['coins']) > 0:
-        # no coin collected => agent might have moved closer to coin
-        distance_old = breadth_first_search(
-            old_game_state['self'][3],
-            *prepare_field_coins(old_game_state, explosion_timer_old))
-        distance_new = breadth_first_search(
-            new_game_state['self'][3],
-            *prepare_field_coins(new_game_state, determine_explosion_timer(new_game_state)))
-
-        if distance_old > distance_new:
-            events.append(MOVED_TOWARDS_COIN_EVENT)
-        elif distance_old < distance_new < math.inf:
-            events.append(MOVED_AWAY_FROM_COIN_EVENT)
-
-    if e.BOMB_DROPPED not in events:
-        if explosion_timer_old[old_game_state['self'][3]] < 1000 and \
-                explosion_timer_new[new_game_state['self'][3]] == 1000:
-            events.append(ESCAPE_BOMB_EVENT)
-
-    if e.BOMB_DROPPED in events:
-        if features_old[0] == 2:
-            events.append(PLACED_BOMB_DESTROY_ONE_EVENT)
-        elif features_old[0] == 3:
-            events.append(PLACED_BOMB_DESTROY_MULTIPLE_EVENT)
-        if features_old[0] > 1:
-            x, y = old_game_state['self'][3]
-            count_crates = count_destroyable_crates(x, y, old_game_state, explosion_timer_old)
-            for _ in range(count_crates):
-                events.append(PLACE_BOMB_TARGET_CRATE_EVENT)
-        if features_old[0] == 0:
-            events.append(PLACED_UNSAFE_BOMB_EVENT)
-
-    if e.WAITED in events:
-        marker = features_old[6]
-        if 0 < marker < 4:
-            marker += 1
-        if marker == 4:
-            marker = 1
-        if features_old[marker + 1] != 4:
-            events.append(WAITED_WITHOUT_NEED_EVENT)
-
-    if features_old[6] == 0 and features_old[1] < 4:
-        if features_old[1] == 0:
-            if e.MOVED_UP not in events:
-                events.append(NOT_FLEEING_CORRECTLY_EVENT)
-        elif features_old[1] == 1:
-            if e.MOVED_DOWN not in events:
-                events.append(NOT_FLEEING_CORRECTLY_EVENT)
-        elif features_old[1] == 2:
-            if e.MOVED_LEFT not in events:
-                events.append(NOT_FLEEING_CORRECTLY_EVENT)
-        else:
-            if e.MOVED_RIGHT not in events:
-                events.append(NOT_FLEEING_CORRECTLY_EVENT)
-
+    # moved closer/further away from coin event
     action_index = -1
     if e.MOVED_UP in events:
         action_index = 0
@@ -231,6 +189,92 @@ def add_custom_events(self, old_game_state: dict, self_action: str, new_game_sta
     elif e.BOMB_DROPPED in events:
         action_index = 5
 
+    # move towards/away from coin event
+    if 0 <= action_index <= 3:
+        directions = determine_coin_value_scored_reward(*old_game_state['self'][3], old_game_state, explosion_timer_old)
+        if directions.max() >= 1:
+            if directions[action_index] == 1:
+                events.append(MOVED_TOWARDS_COIN_EVENT)
+            else:
+                events.append(MOVED_AWAY_FROM_COIN_EVENT)
+
+    # move towards/away from crate event
+    if 0 <= action_index <= 3:
+        directions = determine_crate_value_scored_reward(*old_game_state['self'][3], old_game_state, explosion_timer_old)
+        if directions.max() >= 1:
+            if directions[action_index] == 1:
+                events.append(MOVED_TOWARDS_CRATE_EVENT)
+            else:
+                events.append(MOVED_AWAY_FROM_CRATE_EVENT)
+
+
+    if e.BOMB_DROPPED not in events:
+        if explosion_timer_old[old_game_state['self'][3]] < 1000 and \
+                explosion_timer_new[new_game_state['self'][3]] == 1000:
+            events.append(ESCAPE_BOMB_EVENT)
+
+    # event rewarding the agent to move away from bombs
+    if features_old[1]:
+        distance_to_bomb_old = distance_to_nearest_bomb(old_game_state)
+        distance_to_bomb_new = distance_to_nearest_bomb(new_game_state)
+        if distance_to_bomb_new < 3 or distance_to_bomb_old < 3:
+            if distance_to_bomb_old < distance_to_bomb_new:
+                events.append(MOVED_AWAY_FROM_BOMB_EVENT)
+            else:
+                events.append(MOVED_TOWARDS_BOMB_EVENT)
+
+    # event rewarding the agent to move to a square where he is exploding more crates
+    old_x, old_y = old_game_state['self'][3]
+    new_x, new_y = new_game_state['self'][3]
+    old_count_destroyable_crates = count_destroyable_crates(old_x, old_y, old_game_state, explosion_timer_old)
+    new_count_destroyable_crates = count_destroyable_crates(new_x, new_y, old_game_state, explosion_timer_old)
+    if new_count_destroyable_crates > old_count_destroyable_crates:
+        events.append(INCREASED_DESTROYABLE_CRATES_COUNT)
+    elif new_count_destroyable_crates < old_count_destroyable_crates:
+        events.append(DECREASED_DESTROYABLE_CRATES_COUNT)
+
+
+    if e.BOMB_DROPPED in events:
+        if features_old[0] == 2:
+            events.append(PLACED_BOMB_DESTROY_ONE_EVENT)
+        elif features_old[0] == 3:
+            events.append(PLACED_BOMB_DESTROY_MULTIPLE_EVENT)
+        """    
+        if features_old[0] > 1:
+            x, y = old_game_state['self'][3]
+            count_crates = count_destroyable_crates(x, y, old_game_state, explosion_timer_old)
+            for _ in range(count_crates):
+                events.append(PLACE_BOMB_TARGET_CRATE_EVENT)
+        """
+        if features_old[0] == 0:
+            events.append(PLACED_UNSAFE_BOMB_EVENT)
+
+    """
+    if e.WAITED in events:
+        marker = features_old[6]
+        if 0 < marker < 4:
+            marker += 1
+        if marker == 4:
+            marker = 1
+        if features_old[marker + 1] != 4:
+            events.append(WAITED_WITHOUT_NEED_EVENT)
+    """
+
+    if features_old[1] < 4:
+        if features_old[1] == 0:
+            if e.MOVED_UP not in events:
+                events.append(NOT_FLEEING_CORRECTLY_EVENT)
+        elif features_old[1] == 1:
+            if e.MOVED_DOWN not in events:
+                events.append(NOT_FLEEING_CORRECTLY_EVENT)
+        elif features_old[1] == 2:
+            if e.MOVED_LEFT not in events:
+                events.append(NOT_FLEEING_CORRECTLY_EVENT)
+        else:
+            if e.MOVED_RIGHT not in events:
+                events.append(NOT_FLEEING_CORRECTLY_EVENT)
+
+    """
     if action_index == -1:
         events.append(DID_NOT_FOLLOW_MARKER_EVENT)
     else:
@@ -255,6 +299,7 @@ def add_custom_events(self, old_game_state: dict, self_action: str, new_game_sta
                     events.append(FOLLOWED_MARKER_EVENT if action_index == 4 else DID_NOT_FOLLOW_MARKER_EVENT)
             else:
                 events.append(FOLLOWED_MARKER_EVENT if action_index == features_old[5] else DID_NOT_FOLLOW_MARKER_EVENT)
+    """
 
 
 def learning_step(self, transition: Transition):
@@ -386,7 +431,7 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     self.transitions.append(
         Transition(state_to_features(last_game_state),
                    ACTION_TO_INDEX[last_action],
-                   (3, 4, 4, 4, 4, 4, 1), reward_from_events(self, events))
+                   (3, 4, 4, 4, 4, 4, 4, 5, 0, 0, 0, 0), reward_from_events(self, events))
     )
 
     for _ in range(EPOCHS_PER_ROUND):
@@ -440,31 +485,43 @@ def reward_from_events(self, events: List[str]) -> int:
     Rewards are defined in the global variable GAME_REWARDS.
     """
     game_rewards = {
-        e.KILLED_OPPONENT: 50000,
-        e.KILLED_SELF: -10000,
-        e.GOT_KILLED: -4000,
+        # e.KILLED_OPPONENT: 50000,
+        # ?
+        e.KILLED_SELF: -100000,
+        # ?
+        e.GOT_KILLED: -100000,
 
         # MOVEMENT related events
-        e.INVALID_ACTION: -100000,
+        e.INVALID_ACTION: -10000,
         # REPEATED_FIELD_EVENT: -4000,
-        WAITED_WITHOUT_NEED_EVENT: -15000,
-        e.WAITED: 6000,
+        # WAITED_WITHOUT_NEED_EVENT: -15000,
+        # maybe lower?
+        e.WAITED: -5000,
 
         # COIN related events
-        e.COIN_COLLECTED: 20000,
-        MOVED_TOWARDS_COIN_EVENT: 1000,
-        MOVED_AWAY_FROM_COIN_EVENT: -1000,
-        e.COIN_FOUND: 1000,
+        e.COIN_COLLECTED: 6000,
+        MOVED_TOWARDS_COIN_EVENT: 6000,
+        MOVED_AWAY_FROM_COIN_EVENT: -8000,
+
+        MOVED_TOWARDS_CRATE_EVENT: 3000,
+        MOVED_AWAY_FROM_CRATE_EVENT: -5000,
+
+        # e.COIN_FOUND: 1000,
+        # INCREASED_DESTROYABLE_CRATES_COUNT: 3000,
+        # DECREASED_DESTROYABLE_CRATES_COUNT: -3000,
 
         # BOMB related events
-        PLACED_BOMB_DESTROY_ONE_EVENT: 2500,
-        PLACED_BOMB_DESTROY_MULTIPLE_EVENT: 4000,
-        PLACE_BOMB_TARGET_CRATE_EVENT: 10000,
+        PLACED_BOMB_DESTROY_ONE_EVENT: 1000,
+        PLACED_BOMB_DESTROY_MULTIPLE_EVENT: 2000,
+        #PLACE_BOMB_TARGET_CRATE_EVENT: 2000,
         PLACED_UNSAFE_BOMB_EVENT: -20000,
         e.BOMB_DROPPED: 1000,
         ESCAPE_BOMB_EVENT: 5000,
         NOT_FLEEING_CORRECTLY_EVENT: -10000,
-        e.CRATE_DESTROYED: 1000,
+
+        #MOVED_AWAY_FROM_BOMB_EVENT: 500,
+        #MOVED_TOWARDS_BOMB_EVENT: - 500,
+        # e.CRATE_DESTROYED: 1000,
     }
     # game_rewards = {
     #    FOLLOWED_MARKER_EVENT: 1000,
@@ -476,9 +533,9 @@ def reward_from_events(self, events: List[str]) -> int:
         if event in game_rewards:
             reward_sum += game_rewards[event]
 
-    #if FOLLOWED_MARKER_EVENT in events and reward_sum < 0:
+    # if FOLLOWED_MARKER_EVENT in events and reward_sum < 0:
     #    print(f"Good move, negative reward {events}")
-    #if DID_NOT_FOLLOW_MARKER_EVENT in events and reward_sum > 0:
+    # if DID_NOT_FOLLOW_MARKER_EVENT in events and reward_sum > 0:
     #    print(f"Bad move, positive reward {events}")
 
     self.logger.info(f"Awarded {reward_sum} for events {', '.join(events)}")

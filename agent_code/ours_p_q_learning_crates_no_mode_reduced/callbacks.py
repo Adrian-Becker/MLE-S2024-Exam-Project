@@ -11,13 +11,14 @@ from features import determine_explosion_timer, count_destroyable_crates_and_ene
     determine_enemy_value, determine_escape_direction_scored, save_directions_scored, determine_coin_value_scored, \
     determine_is_worth_to_move_crates_scored, determine_crate_value_scored, determine_is_worth_to_move_enemies_scored, \
     determine_enemy_value_scored, determine_trap_escape_direction_scored, determine_trap_escape_direction_improved, \
-    determine_trap_enemy_direction
+    determine_trap_enemy_direction, prepare_field_coins
 
 ACTIONS = ['UP', 'DOWN', 'LEFT', 'RIGHT', 'WAIT', 'BOMB']
 ACTION_INDICES = np.array([0, 1, 2, 3, 4, 5]).astype(int)
 ACTION_TO_INDEX = {
     'UP': 0, 'DOWN': 1, 'LEFT': 2, 'RIGHT': 3, 'WAIT': 4, 'BOMB': 5
 }
+
 ACTIONS_PROBABILITIES = [0.2, 0.2, 0.2, 0.2, 0.195, 0.005]
 
 WIDTH = 17
@@ -49,10 +50,10 @@ enemies: 0-3;4, 2^4=16 (UP, DOWN, LEFT, RIGHT) 								                         
 = 40500
 """
 # FEATURE_SHAPE = (3, 3, 3, 3, 4, 5, 5, 5, len(ACTIONS))
-FEATURE_SHAPE = (4, 5, 5, 5, 5, 5, 5, len(ACTIONS))
+FEATURE_SHAPE = (4, 5, 5, 5, 5, 5, 5, 6, 2, 2, 2, 2, len(ACTIONS))
 
 EPS_START = 0.2
-EPS_END = 0.05
+EPS_END = 0.0
 EPS_DECAY = 40000
 
 
@@ -80,9 +81,10 @@ def setup(self):
         with open(f"tables/{file_prefix}-q-table.pt", "rb") as file:
             self.Q = pickle.load(file)
         with np.printoptions(threshold=np.inf):
-            print(self.Q)
+            # print(self.Q)
+            pass
         print(f"Loaded {file_prefix}")
-        print(self.Q[3, 4, 4, 4, 4, 4, 1])
+        print(self.Q[3, 4, 4, 4, 4, 4, 1, 4, 1, 1, 1, 1])
 
 
 def determine_next_action(game_state: dict, Q) -> str:
@@ -92,15 +94,39 @@ def determine_next_action(game_state: dict, Q) -> str:
 
     return ACTIONS[best_action_index]
 
+
+def get_feature_string(features):
+    str = ""
+    str_list = [["no bomb", "flee", "bomb crate one", "bomb crate multiple"],
+                ["up", "down", "left", "right", "no direction"],
+                ["up", "down", "left", "right", "no direction"],
+                ["up", "down", "left", "right", "no direction"],
+                ["up", "down", "left", "right", "no direction"],
+                ["up", "down", "left", "right", "no direction"],
+                ["flee", "coin", "crate", "enemy", "trap fleeing"],
+                ["up", "down", "left", "right", "no direction", "active trap"]]
+    feature_list = ["Current Square", "Bomb Direction", "Trap Fleeing Direction", "Coin Direction", "Crate Direction",
+                    "Enemy Direction", "Priority Marker", "Trap Setting Direction"]
+    for idx in range(len(features)):
+        str += f"{feature_list[idx]}: {str_list[idx][features[idx]]}"
+        if idx is not len(features) - 1:
+            str += "\n"
+    return str
+
+
 def action_from_features(features):
-    #print(features)
+    # print(features)
     marker = features[6]
     if marker == 0:
         return features[1]
+
+    # trap if possible
     if features[7] != 4:
+        # place bomb if possible
         if features[7] == 5:
             if features[0] > 1:
                 return 5
+        # otherwise follow direction
         else:
             return features[7]
     if marker == 1:
@@ -126,14 +152,13 @@ def action_from_features(features):
     print("WEIRD")
     return 4
 
+
 def act(self, game_state: dict) -> str:
     """
     :param self: The same object that is passed to all of your callbacks.
     :param game_state: The dictionary that describes everything on the board.
     :return: The action to take as a string.
     """
-    return ACTIONS[action_from_features(state_to_features(game_state))]
-
     random_prob = EPS_END + (EPS_START - EPS_END) * math.exp(-1. * self.iteration / EPS_DECAY)
     if self.train and random.random() < random_prob and self.round % 2 == 0:
         features = state_to_features(game_state)
@@ -149,8 +174,9 @@ def act(self, game_state: dict) -> str:
     best_action_index = np.array(list(map(lambda action: self.Q[self.last_features][action], ACTION_INDICES))).argmax()
     action = ACTIONS[best_action_index]
     if not self.train:
-        #print(f"{action} {self.last_features}")
-        #print(self.Q[self.last_features])
+        print(f"{action} {self.last_features}")
+        print(f"{get_feature_string(self.last_features)}")
+        print(self.Q[self.last_features], "\n")
         pass
     return action
 
@@ -218,7 +244,6 @@ def state_to_features(game_state: dict) -> np.array:
             elif current_square > 1:
                 priority_marker = 2
 
-
     if not has_crates:
         crates, min_distance_crates = determine_crate_value_scored(x, y, game_state, explosion_timer)
         features.append(crates)
@@ -249,5 +274,11 @@ def state_to_features(game_state: dict) -> np.array:
     features.append(priority_marker)
 
     features.append(determine_trap_enemy_direction(game_state, explosion_timer))
+
+    field, _ = prepare_field_coins(game_state, explosion_timer)
+    features.append(1 if field[x, y - 1] == 0 else 0)
+    features.append(1 if field[x, y + 1] == 0 else 0)
+    features.append(1 if field[x - 1, y] == 0 else 0)
+    features.append(1 if field[x + 1, y] == 0 else 0)
 
     return tuple(features)
