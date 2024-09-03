@@ -65,7 +65,7 @@ DISCOUNT_FACTOR = 0.9
 
 SYMMETRY_SYNC_RATE = 5
 
-ROUNDS_PER_SAVE = 1000
+ROUNDS_PER_SAVE = 250
 
 CONVERSIONS = [
     {
@@ -316,9 +316,9 @@ def learning_step(self, transition: Transition):
 
 def handle_event_occurrence(self, old_game_state: dict, self_action: str, new_game_state: dict, events: List[str],
                             is_us=False):
-    features_old = state_to_features(old_game_state)
+    features_old = self.last_features
     action_old = ACTION_TO_INDEX[self_action]
-    features_new = state_to_features(new_game_state)
+    features_new = state_to_features(new_game_state, action_old)
 
     if is_us:
         if new_game_state['self'][3] in self.field_history and min(features_old[1:6]) < 4:
@@ -429,9 +429,9 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     self.logger.debug(f'Encountered event(s) {", ".join(map(repr, events))} in final step')
 
     self.transitions.append(
-        Transition(state_to_features(last_game_state),
+        Transition(self.last_features,
                    ACTION_TO_INDEX[last_action],
-                   (3, 4, 4, 4, 4, 4, 4, 5, 0, 0, 0, 0), reward_from_events(self, events))
+                   (3, 4, 4, 4, 4, 4, 4, 5, 0, 0, 0, 0, 4), reward_from_events(self, events))
     )
 
     for _ in range(EPOCHS_PER_ROUND):
@@ -493,13 +493,13 @@ def reward_from_events(self, events: List[str]) -> int:
 
         # MOVEMENT related events
         e.INVALID_ACTION: -10000,
-        # REPEATED_FIELD_EVENT: -4000,
+        REPEATED_FIELD_EVENT: -4000,
         # WAITED_WITHOUT_NEED_EVENT: -15000,
         # maybe lower?
         e.WAITED: -5000,
 
         # COIN related events
-        e.COIN_COLLECTED: 6000,
+        e.COIN_COLLECTED: 10000,
         MOVED_TOWARDS_COIN_EVENT: 6000,
         MOVED_AWAY_FROM_COIN_EVENT: -8000,
 

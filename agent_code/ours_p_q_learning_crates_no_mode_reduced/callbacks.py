@@ -50,7 +50,7 @@ enemies: 0-3;4, 2^4=16 (UP, DOWN, LEFT, RIGHT) 								                         
 = 40500
 """
 # FEATURE_SHAPE = (3, 3, 3, 3, 4, 5, 5, 5, len(ACTIONS))
-FEATURE_SHAPE = (4, 5, 5, 5, 5, 5, 5, 6, 2, 2, 2, 2, len(ACTIONS))
+FEATURE_SHAPE = (4, 5, 5, 5, 5, 5, 5, 6, 2, 2, 2, 2, 5, len(ACTIONS))
 
 EPS_START = 0.5
 EPS_END = 0.0
@@ -64,6 +64,7 @@ def setup(self):
     """
     self.iteration = 0
     self.round = 0
+    self.last_action = 4
     if self.train or not os.path.isfile("tables/0001-q-table.pt"):
         self.logger.info("Setting up model from scratch.")
         self.Q = np.zeros(FEATURE_SHAPE).astype(np.float64)
@@ -84,7 +85,7 @@ def setup(self):
             # print(self.Q)
             pass
         print(f"Loaded {file_prefix}")
-        print(self.Q[3, 4, 4, 4, 4, 4, 4, 5, 0, 0, 0, 0])
+        print(self.Q[3, 4, 4, 4, 4, 4, 4, 5, 0, 0, 0, 0, 4])
 
 
 def determine_next_action(game_state: dict, Q) -> str:
@@ -108,9 +109,10 @@ def get_feature_string(features):
                 ["danger", "no danger"],
                 ["danger", "no danger"],
                 ["danger", "no danger"],
-                ["danger", "no danger"]]
+                ["danger", "no danger"],
+                ["up", "down", "left", "right", "no movement"]]
     feature_list = ["Current Square", "Bomb Direction", "Trap Fleeing Direction", "Coin Direction", "Crate Direction",
-                    "Enemy Direction", "Priority Marker", "Trap Setting Direction", "UP", "DOWN", "LEFT", "RIGHT"]
+                    "Enemy Direction", "Priority Marker", "Trap Setting Direction", "UP", "DOWN", "LEFT", "RIGHT", "previous field"]
     for idx in range(len(features)):
         str += f"{feature_list[idx]}: {str_list[idx][features[idx]]}"
         if idx is not len(features) - 1:
@@ -165,17 +167,21 @@ def act(self, game_state: dict) -> str:
     """
     random_prob = EPS_END + (EPS_START - EPS_END) * math.exp(-1. * self.iteration / EPS_DECAY)
     if self.train and random.random() < random_prob and self.round % 2 == 0:
-        features = state_to_features(game_state)
+        features = state_to_features(game_state, self.last_action)
         if features[0] > 1 and random.random() < 0.5:
+            self.last_action = 5
             return 'BOMB'
         self.logger.debug("Choosing action purely at random.")
         self.last_features = features
-        return np.random.choice(ACTIONS, p=ACTIONS_PROBABILITIES)
+        action = np.random.choice(ACTIONS, p=ACTIONS_PROBABILITIES)
+        self.last_action = ACTION_TO_INDEX[action]
+        return action
 
     self.logger.debug("Querying model for action.")
 
-    self.last_features = state_to_features(game_state)
+    self.last_features = state_to_features(game_state, self.last_action)
     best_action_index = np.array(list(map(lambda action: self.Q[self.last_features][action], ACTION_INDICES))).argmax()
+    self.last_action = best_action_index
     action = ACTIONS[best_action_index]
     if not self.train:
         print(f"{action} {self.last_features}")
@@ -185,7 +191,7 @@ def act(self, game_state: dict) -> str:
     return action
 
 
-def state_to_features(game_state: dict) -> np.array:
+def state_to_features(game_state: dict, last_action) -> np.array:
     """
     *This is not a required function, but an idea to structure your code.*
 
@@ -211,8 +217,6 @@ def state_to_features(game_state: dict) -> np.array:
 
     explosion_timer = determine_explosion_timer(game_state)
     count_crates, count_enemies = count_destroyable_crates_and_enemies(x, y, game_state, explosion_timer)
-
-    danger_map = create_danger_map(game_state)
 
     current_square = determine_current_square(x, y, game_state, count_crates + count_enemies)
     features.append(current_square)
@@ -284,5 +288,7 @@ def state_to_features(game_state: dict) -> np.array:
     features.append(1 if field[x, y + 1] == 0 else 0)
     features.append(1 if field[x - 1, y] == 0 else 0)
     features.append(1 if field[x + 1, y] == 0 else 0)
+
+    features.append(np.clip(last_action, 0, 4))
 
     return tuple(features)
