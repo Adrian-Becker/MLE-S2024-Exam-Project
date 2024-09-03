@@ -39,6 +39,7 @@ def world_controller(world, n_rounds, *,
     gui_timekeeper = Timekeeper(update_interval)
 
     wins = np.zeros((len(world.agents)))
+    death_by_others = np.zeros((len(world.agents))).astype(np.int64)
 
     def render(wait_until_due):
         # If every step should be displayed, wait until it is due to be shown
@@ -52,8 +53,8 @@ def world_controller(world, n_rounds, *,
             pygame.display.flip()
 
     user_input = None
-    #for _ in tqdm(range(n_rounds)):
-    for _ in range(n_rounds):
+    # for _ in tqdm(range(n_rounds)):
+    for num_round in range(n_rounds):
         world.new_round()
         while world.running:
             # Only render when the last frame is not too old
@@ -83,12 +84,19 @@ def world_controller(world, n_rounds, *,
             max_score = 0
             best_agent = 0
             for i in range(len(world.agents)):
-                if max_score < world.agents[i].score:
-                    max_score = world.agents[i].score
+                agent = world.agents[i]
+                if max_score < agent.score:
+                    max_score = agent.score
                     best_agent = i
+            print(f"{world.agents[best_agent].name} won round {num_round + 1} ({max_score}), " +
+                  f"suicides so far = {world.agents[best_agent].lifetime_statistics['suicides']}!")
             wins[best_agent] += 1
-            print(f"{world.agents[best_agent].name} won ({max_score})!")
-
+            for i in range(len(world.agents)):
+                agent = world.agents[i]
+                if agent.statistics['steps'] < 400 and agent.statistics['suicides'] < 1:
+                    death_by_others[i] += 1
+                print(f"  - {agent.name}; suicides = {agent.lifetime_statistics['suicides']};" +
+                      f"kills = {agent.lifetime_statistics['kills']}; killed by others = {death_by_others[i]}")
         # Save video of last game
         if make_video:
             gui.make_video()
@@ -111,8 +119,10 @@ def world_controller(world, n_rounds, *,
     if benchmark:
         for i in range(len(world.agents)):
             agent = world.agents[i]
-            print(agent.name + " has won " + "{:5.0f}".format(wins[i]) + f" games, suicides = {world.agents[i].lifetime_statistics['suicides']}!")
+            print(agent.name + " has won " + "{:5.0f}".format(
+                wins[i]) + f" games, suicides = {world.agents[i].lifetime_statistics['suicides']}!")
             print(agent.lifetime_statistics)
+
 
 def main(argv=None):
     parser = ArgumentParser()

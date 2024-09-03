@@ -11,7 +11,7 @@ from features import determine_explosion_timer, count_destroyable_crates_and_ene
     determine_enemy_value, determine_escape_direction_scored, save_directions_scored, determine_coin_value_scored, \
     determine_is_worth_to_move_crates_scored, determine_crate_value_scored, determine_is_worth_to_move_enemies_scored, \
     determine_enemy_value_scored, determine_trap_escape_direction_scored, determine_trap_escape_direction_improved, \
-    determine_trap_enemy_direction, prepare_field_coins
+    determine_trap_enemy_direction, prepare_field_coins, determine_trap_filter
 
 ACTIONS = ['UP', 'DOWN', 'LEFT', 'RIGHT', 'WAIT', 'BOMB']
 ACTION_INDICES = np.array([0, 1, 2, 3, 4, 5]).astype(int)
@@ -91,7 +91,7 @@ def setup(self):
             # print(self.Q)
             pass
         print(f"Loaded {file_prefix}")
-        print(self.Q[3, 4, 4, 4, 4, 4, 4, 5, 0, 0, 0, 0, 4])
+        #print(self.Q[3, 4, 4, 4, 4, 4, 4, 5, 0, 0, 0, 0, 4])
 
 
 def determine_next_action(game_state: dict, Q) -> str:
@@ -166,6 +166,9 @@ def action_from_features(features):
 
 
 def act(self, game_state: dict) -> str:
+    self.last_features = state_to_features(game_state, self.last_action)
+    self.last_action = action_from_features(self.last_features)
+    return ACTIONS[self.last_action]
     """
     :param self: The same object that is passed to all of your callbacks.
     :param game_state: The dictionary that describes everything on the board.
@@ -187,7 +190,6 @@ def act(self, game_state: dict) -> str:
 
     self.last_features = state_to_features(game_state, self.last_action)
     best_action_index = np.array(list(map(lambda action: self.Q[self.last_features][action], ACTION_INDICES))).argmax()
-    self.last_action = best_action_index
     action = ACTIONS[best_action_index]
     if not self.train:
         print(f"{action} {self.last_features}")
@@ -224,6 +226,8 @@ def state_to_features(game_state: dict, last_action) -> np.array:
     explosion_timer = determine_explosion_timer(game_state)
     count_crates, count_enemies = count_destroyable_crates_and_enemies(x, y, game_state, explosion_timer)
 
+    trap_filter = determine_trap_filter(game_state, explosion_timer)
+
     current_square = determine_current_square(x, y, game_state, count_crates + count_enemies)
     features.append(current_square)
 
@@ -242,14 +246,15 @@ def state_to_features(game_state: dict, last_action) -> np.array:
     if direction < 4 and priority_marker < 0:
         priority_marker = 4
 
-    coins, min_distance_coins = determine_coin_value_scored(x, y, game_state, explosion_timer)
+    coins, min_distance_coins = determine_coin_value_scored(x, y, game_state, explosion_timer, trap_filter)
     features.append(coins)
     if min_distance_coins < 64 and priority_marker < 0:
         priority_marker = 1
 
     has_crates = False
     if current_square > 1 and count_crates > 0:
-        worth_move = determine_is_worth_to_move_crates_scored(x, y, game_state, count_crates, explosion_timer)
+        worth_move = determine_is_worth_to_move_crates_scored(x, y, game_state, count_crates, explosion_timer,
+                                                              trap_filter)
         features.append(worth_move)
         has_crates = True
         if priority_marker < 0:
@@ -259,21 +264,22 @@ def state_to_features(game_state: dict, last_action) -> np.array:
                 priority_marker = 2
 
     if not has_crates:
-        crates, min_distance_crates = determine_crate_value_scored(x, y, game_state, explosion_timer)
+        crates, min_distance_crates = determine_crate_value_scored(x, y, game_state, explosion_timer, trap_filter)
         features.append(crates)
         if crates < 4 and priority_marker < 0:
             priority_marker = 2
 
     has_enemies = False
     if current_square > 1 and count_enemies > 0:
-        worth_move = determine_is_worth_to_move_enemies_scored(x, y, game_state, count_enemies, explosion_timer)
+        worth_move = determine_is_worth_to_move_enemies_scored(x, y, game_state, count_enemies, explosion_timer,
+                                                               trap_filter)
         features.append(worth_move)
         has_enemies = True
         if worth_move < 4 and priority_marker < 0:
             priority_marker = 3
 
     if not has_enemies:
-        enemies, min_distance_enemies = determine_enemy_value_scored(x, y, game_state, explosion_timer)
+        enemies, min_distance_enemies = determine_enemy_value_scored(x, y, game_state, explosion_timer, trap_filter)
         features.append(enemies)
         if enemies < 4 and priority_marker < 0:
             priority_marker = 3
