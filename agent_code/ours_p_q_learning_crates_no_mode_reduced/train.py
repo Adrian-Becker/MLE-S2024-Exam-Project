@@ -50,6 +50,7 @@ REPEATED_FIELD_EVENT = "Repeated Field"
 PLACE_BOMB_TARGET_CRATE_EVENT = "Place Bomb Target Crate"
 
 NOT_FLEEING_CORRECTLY_EVENT = "Not Fleeing Correctly"
+FLEEING_CORRECTLY_EVENT = "Fleeing Correctly"
 
 FOLLOWED_MARKER_EVENT = "Followed Marker"
 DID_NOT_FOLLOW_MARKER_EVENT = "Did not Follow Marker"
@@ -62,6 +63,9 @@ DECREASED_DESTROYABLE_CRATES_COUNT = "Decreased destroyable crates count"
 
 MOVED_TOWARDS_CRATE_EVENT = "Moved Towards Crate"
 MOVED_AWAY_FROM_CRATE_EVENT = "Moved Away from Crate"
+
+NOT_AVOIDING_TRAP_CORRECTLY_EVENT = "Not avoiding trap correctly"
+AVOIDING_TRAP_CORRECTLY_EVENT = "Avoiding trap correctly"
 
 LEARNING_RATE = 0.1
 DISCOUNT_FACTOR = 0.9
@@ -255,7 +259,7 @@ def add_custom_events(self, old_game_state: dict, self_action: str, new_game_sta
         if features_old[7] == 5:
             events.append(PLACED_BOMB_TRAPPED_ENEMY_EVENT)
 
-    if features_old[7] == 0 or features_old[7] == 1 or features_old[7] == 2 or features_old[7] == 3:
+    if features_old[7] in [0, 1, 2, 3]:
         events.append(MOVED_TOWARDS_TRAP_EVENT)
 
     """
@@ -270,18 +274,17 @@ def add_custom_events(self, old_game_state: dict, self_action: str, new_game_sta
     """
 
     if features_old[1] < 4:
-        if features_old[1] == 0:
-            if e.MOVED_UP not in events:
-                events.append(NOT_FLEEING_CORRECTLY_EVENT)
-        elif features_old[1] == 1:
-            if e.MOVED_DOWN not in events:
-                events.append(NOT_FLEEING_CORRECTLY_EVENT)
-        elif features_old[1] == 2:
-            if e.MOVED_LEFT not in events:
-                events.append(NOT_FLEEING_CORRECTLY_EVENT)
+        if action_index == features_old[1]:
+            events.append(FLEEING_CORRECTLY_EVENT)
         else:
-            if e.MOVED_RIGHT not in events:
-                events.append(NOT_FLEEING_CORRECTLY_EVENT)
+            events.append(NOT_FLEEING_CORRECTLY_EVENT)
+
+
+    if features_old[2] != 4:
+        if action_index == features_old[2]:
+            events.append(AVOIDING_TRAP_CORRECTLY_EVENT)
+        else:
+            events.append(NOT_AVOIDING_TRAP_CORRECTLY_EVENT)
 
     """
     if action_index == -1:
@@ -515,6 +518,9 @@ def reward_from_events(self, events: List[str]) -> int:
         MOVED_TOWARDS_CRATE_EVENT: 3000,
         MOVED_AWAY_FROM_CRATE_EVENT: -5000,
 
+        NOT_AVOIDING_TRAP_CORRECTLY_EVENT: -100000,
+        AVOIDING_TRAP_CORRECTLY_EVENT: 6000,
+
         # e.COIN_FOUND: 1000,
         # INCREASED_DESTROYABLE_CRATES_COUNT: 3000,
         # DECREASED_DESTROYABLE_CRATES_COUNT: -3000,
@@ -527,6 +533,7 @@ def reward_from_events(self, events: List[str]) -> int:
         e.BOMB_DROPPED: 2000,
         ESCAPE_BOMB_EVENT: 5000,
         NOT_FLEEING_CORRECTLY_EVENT: -10000,
+        FLEEING_CORRECTLY_EVENT: 6000,
         PLACED_BOMB_TRAPPED_ENEMY_EVENT: 150000,
 
         MOVED_TOWARDS_TRAP_EVENT: 150000

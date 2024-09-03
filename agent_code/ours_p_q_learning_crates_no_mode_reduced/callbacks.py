@@ -166,9 +166,6 @@ def action_from_features(features):
 
 
 def act(self, game_state: dict) -> str:
-    self.last_features = state_to_features(game_state, self.last_action)
-    self.last_action = action_from_features(self.last_features)
-    return ACTIONS[self.last_action]
     """
     :param self: The same object that is passed to all of your callbacks.
     :param game_state: The dictionary that describes everything on the board.
