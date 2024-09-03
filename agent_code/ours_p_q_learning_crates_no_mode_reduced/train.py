@@ -41,6 +41,9 @@ WAITED_WITHOUT_NEED_EVENT = "Waited Without Need"
 PLACED_BOMB_DESTROY_ONE_EVENT = "Placed Bomb Safely Destroy One"
 PLACED_BOMB_DESTROY_MULTIPLE_EVENT = "Placed Bomb Safely Destroy Multiple"
 PLACED_UNSAFE_BOMB_EVENT = "Paced Unsafe Bomb"
+PLACED_BOMB_TRAPPED_ENEMY_EVENT = "Placed Bomb Trapped Enemy Event"
+
+MOVED_TOWARDS_TRAP_EVENT = "Moved towards trap event"
 
 REPEATED_FIELD_EVENT = "Repeated Field"
 
@@ -248,6 +251,12 @@ def add_custom_events(self, old_game_state: dict, self_action: str, new_game_sta
         """
         if features_old[0] == 0:
             events.append(PLACED_UNSAFE_BOMB_EVENT)
+
+        if features_old[7] == 5:
+            events.append(PLACED_BOMB_TRAPPED_ENEMY_EVENT)
+
+    if features_old[7] == 0 or features_old[7] == 1 or features_old[7] == 2 or features_old[7] == 3:
+        events.append(MOVED_TOWARDS_TRAP_EVENT)
 
     """
     if e.WAITED in events:
@@ -514,11 +523,13 @@ def reward_from_events(self, events: List[str]) -> int:
         PLACED_BOMB_DESTROY_ONE_EVENT: 1000,
         PLACED_BOMB_DESTROY_MULTIPLE_EVENT: 2000,
         #PLACE_BOMB_TARGET_CRATE_EVENT: 2000,
-        PLACED_UNSAFE_BOMB_EVENT: -20000,
-        e.BOMB_DROPPED: 1000,
+        PLACED_UNSAFE_BOMB_EVENT: -100000,
+        e.BOMB_DROPPED: 2000,
         ESCAPE_BOMB_EVENT: 5000,
         NOT_FLEEING_CORRECTLY_EVENT: -10000,
+        PLACED_BOMB_TRAPPED_ENEMY_EVENT: 150000,
 
+        MOVED_TOWARDS_TRAP_EVENT: 150000
         #MOVED_AWAY_FROM_BOMB_EVENT: 500,
         #MOVED_TOWARDS_BOMB_EVENT: - 500,
         # e.CRATE_DESTROYED: 1000,

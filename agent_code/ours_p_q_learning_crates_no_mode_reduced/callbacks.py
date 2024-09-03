@@ -66,8 +66,14 @@ def setup(self):
     self.round = 0
     self.last_action = 4
     if self.train or not os.path.isfile("tables/0001-q-table.pt"):
-        self.logger.info("Setting up model from scratch.")
-        self.Q = np.zeros(FEATURE_SHAPE).astype(np.float64)
+        if os.path.isfile("starting_point.pt"):
+            self.logger.info("Loading starting_point.pt")
+            with open(f"starting_point.pt", "rb") as file:
+                self.Q = pickle.load(file)
+        else:
+            self.logger.info("Initial Q Table with 0")
+            self.logger.info("Setting up model from scratch.")
+            self.Q = np.zeros(FEATURE_SHAPE).astype(np.float64)
     else:
         self.logger.info("Loading model from saved state.")
         files = os.listdir("tables")

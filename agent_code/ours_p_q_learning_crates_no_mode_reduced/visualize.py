@@ -24,12 +24,14 @@ def plot():
     plt.xlabel("iteration")
     plt.ylabel("avg points over 100 rounds")
     plt.title("Average Points During Training")
+    plt.grid()
     plt.show()
 
     plt.plot(iterations, avg_rewards, color="orangered")
     plt.xlabel("iteration")
     plt.ylabel("avg rewards over 100 rounds")
     plt.title("Average rewards During Training")
+    plt.grid()
     plt.show()
 
 
