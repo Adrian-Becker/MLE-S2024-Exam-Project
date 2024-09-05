@@ -207,13 +207,13 @@ def add_custom_events(self, old_game_state: dict, self_action: str, new_game_sta
 
     # move towards/away from crate event
     if 0 <= action_index <= 3:
-        directions = determine_crate_value_scored_reward(*old_game_state['self'][3], old_game_state, explosion_timer_old)
+        directions = determine_crate_value_scored_reward(*old_game_state['self'][3], old_game_state,
+                                                         explosion_timer_old)
         if directions.max() >= 1:
             if directions[action_index] == 1:
                 events.append(MOVED_TOWARDS_CRATE_EVENT)
             else:
                 events.append(MOVED_AWAY_FROM_CRATE_EVENT)
-
 
     if e.BOMB_DROPPED not in events:
         if explosion_timer_old[old_game_state['self'][3]] < 1000 and \
@@ -239,7 +239,6 @@ def add_custom_events(self, old_game_state: dict, self_action: str, new_game_sta
         events.append(INCREASED_DESTROYABLE_CRATES_COUNT)
     elif new_count_destroyable_crates < old_count_destroyable_crates:
         events.append(DECREASED_DESTROYABLE_CRATES_COUNT)
-
 
     if e.BOMB_DROPPED in events:
         if features_old[0] == 2:
@@ -314,6 +313,11 @@ def add_custom_events(self, old_game_state: dict, self_action: str, new_game_sta
                 events.append(FOLLOWED_MARKER_EVENT if action_index == features_old[5] else DID_NOT_FOLLOW_MARKER_EVENT)
     """
 
+def convert_features(conversion, features, action):
+    return (features[0], conversion[features[1]], conversion[features[2]], conversion[features[3]],
+            conversion[features[4]], conversion[features[5]], features[6], conversion[features[7]]) + \
+            transmute_neighbors(conversion, features[8: 12]) + (conversion[features[12]], conversion[action])
+
 
 def learning_step(self, transition: Transition):
     features_old, action_old, features_new, rewards = transition
@@ -321,10 +325,20 @@ def learning_step(self, transition: Transition):
     action_new_P = np.array(list(map(lambda action: self.P[features_new][action], ACTION_INDICES))).argmax()
     valQ = self.Q[features_old][action_old]
     valP = self.P[features_old][action_old]
-    self.Q[features_old][action_old] = valQ + LEARNING_RATE * (
+
+    result_Q = valQ + LEARNING_RATE * (
             rewards + DISCOUNT_FACTOR * self.P[features_new][action_new_Q] - self.Q[features_old][action_old])
-    self.P[features_old][action_old] = valP + LEARNING_RATE * (
+    result_P = valP + LEARNING_RATE * (
             rewards + DISCOUNT_FACTOR * self.Q[features_new][action_new_P] - self.P[features_old][action_old])
+
+    self.Q[features_old][action_old] = result_Q
+    self.P[features_old][action_old] = result_P
+
+    for conversion in CONVERSIONS:
+        converted_features = convert_features(conversion, features_old, action_old)
+        self.Q[converted_features] = result_Q
+        self.P[converted_features] = result_P
+
 
 
 def handle_event_occurrence(self, old_game_state: dict, self_action: str, new_game_state: dict, events: List[str],
@@ -415,29 +429,58 @@ def transmute_neighbors(conversion, indices):
 def sync_symmetries(Q):
     new_Q = np.zeros_like(Q)
 
-    for current_field in range(0, 4):
+    direction_values = [
+        (0, 0, 0, 0),
+        (0, 0, 0, 1),
+        (0, 0, 1, 0),
+        (0, 0, 1, 1),
+        (0, 1, 0, 0),
+        (0, 1, 0, 1),
+        (0, 1, 1, 0),
+        (0, 1, 1, 1),
+        (1, 0, 0, 0),
+        (1, 0, 0, 1),
+        (1, 0, 1, 0),
+        (1, 0, 1, 1),
+        (1, 1, 0, 0),
+        (1, 1, 0, 1),
+        (1, 1, 1, 0),
+        (1, 1, 1, 1)
+    ]
+
+    for current_field in range(4):
         for escape_direction in range(5):
             for trap_direction in range(5):
                 for coin_direction in range(5):
                     for crate_direction in range(5):
                         for enemy_direction in range(5):
-                            for priority_maker in range(0, 4):
-                                for action in ACTION_INDICES:
-                                    value = 0
-                                    for conversion in CONVERSIONS:
-                                        c_escape_direction = conversion[escape_direction]
-                                        c_trap_direction = conversion[trap_direction]
-                                        c_coin_direction = conversion[coin_direction]
-                                        c_crate_direction = conversion[crate_direction]
-                                        c_enemy_direction = conversion[enemy_direction]
-                                        c_action = conversion[action]
+                            for priority_maker in range(5):
+                                for trap_setting_direction in range(6):
+                                    for direction in direction_values:
+                                        for last_action in range(5):
+                                            for action in ACTION_INDICES:
+                                                value = 0
+                                                for conversion in CONVERSIONS:
+                                                    c_escape_direction = conversion[escape_direction]
+                                                    c_trap_direction = conversion[trap_direction]
+                                                    c_coin_direction = conversion[coin_direction]
+                                                    c_crate_direction = conversion[crate_direction]
+                                                    c_enemy_direction = conversion[enemy_direction]
+                                                    c_trap_setting_direction = conversion[trap_setting_direction]
+                                                    c_direction = transmute_neighbors(conversion, direction)
+                                                    c_last_action = conversion[last_action]
+                                                    c_action = conversion[action]
 
-                                        value += \
-                                            Q[current_field][c_escape_direction][c_trap_direction][c_coin_direction] \
-                                                [c_crate_direction][c_enemy_direction][priority_maker][c_action]
-                                    new_Q[current_field][escape_direction][trap_direction][coin_direction][
-                                        crate_direction] \
-                                        [enemy_direction][priority_maker][action] = value / 6.0
+                                                    value += \
+                                                        Q[current_field][c_escape_direction][c_trap_direction][
+                                                            c_coin_direction] \
+                                                            [c_crate_direction][c_enemy_direction][priority_maker][
+                                                            c_trap_setting_direction][c_direction][c_last_action][
+                                                            c_action]
+                                                new_Q[current_field][escape_direction][trap_direction][coin_direction] \
+                                                    [crate_direction][enemy_direction][priority_maker][
+                                                    trap_setting_direction][direction][last_action][
+                                                    action] = value / 6.0
     return new_Q
 
 
@@ -460,8 +503,8 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     self.round += 1
 
     if self.round % SYMMETRY_SYNC_RATE == 0:
-        # self.Q = sync_symmetries(self.Q)
-        # self.P = sync_symmetries(self.P)
+        #self.Q = sync_symmetries(self.Q)
+        #self.P = sync_symmetries(self.P)
         pass
 
     if self.round % ROUNDS_PER_SAVE == 0:

@@ -18,7 +18,7 @@ def plot():
 
     iterations = np.array(iterations).astype(np.int64)
     avg_points = np.array(avg_points).astype(np.double)
-    avg_rewards = np.array(avg_rewards).astype(np.double).clip(-1000, math.inf)
+    avg_rewards = np.array(avg_rewards).astype(np.double)
 
     plt.plot(iterations, avg_points, color="forestgreen")
     plt.xlabel("iteration")
