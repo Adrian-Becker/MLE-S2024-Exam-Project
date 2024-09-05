@@ -68,7 +68,7 @@ DISCOUNT_FACTOR = 0.9
 
 SYMMETRY_SYNC_RATE = 5
 
-ROUNDS_PER_SAVE = 250
+ROUNDS_PER_SAVE = 1000
 
 CONVERSIONS = [
     {
@@ -149,7 +149,9 @@ def setup_training(self):
         Stat('invalid moves', 'invalid', True, 50, '{:5.2f}', '{:5.2f}', 35, '%'),
         Stat('kills', 'kills', True, 50, '{:1d}', '{:4.2f}', 34, ' '),
         Stat('suicides', 'suicides', True, 50, '{:1d}', '{:4.2f}', 34, ' '),
-        Stat('repeated fields', 'repeated', True, 50, '{:5.2f}', '{:5.2f}', 31, '%')
+        Stat('repeated fields', 'repeated', True, 50, '{:5.2f}', '{:5.2f}', 31, '%'),
+        Stat('positive reward', 'p-reward', True, 50, '{:3d}', '{:6.2f}', 35, ' '),
+        Stat('negative reward', 'n-reward', True, 50, '{:3d}', '{:6.2f}', 35, ' ')
     ])
 
     self.round = 0
@@ -161,6 +163,8 @@ def setup_training(self):
     self.suicides = 0
     self.kills = 0
     self.repeated = 0
+    self.positive = 0
+    self.negative = 0
     self.field_history = deque(maxlen=4)
 
     if not os.path.exists("tables"):
@@ -255,7 +259,7 @@ def add_custom_events(self, old_game_state: dict, self_action: str, new_game_sta
         if features_old[7] == 5:
             events.append(PLACED_BOMB_TRAPPED_ENEMY_EVENT)
 
-    if features_old[7] == 0 or features_old[7] == 1 or features_old[7] == 2 or features_old[7] == 3:
+    if features_old[7] != 4 and features_old[7] == action_index:
         events.append(MOVED_TOWARDS_TRAP_EVENT)
 
     """
@@ -360,7 +364,13 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
     self.logger.debug(f'Encountered game event(s) {", ".join(map(repr, events))} in step {new_game_state["step"]}')
 
     handle_event_occurrence(self, old_game_state, self_action, new_game_state, events, True)
-    self.total_rewards += reward_from_events(self, events)
+    rewards = reward_from_events(self, events)
+    self.total_rewards += rewards
+    if rewards > 0:
+        self.positive += 1
+    elif rewards < 0:
+        self.negative += 1
+        # print(self.last_features, self_action, events)
 
     self.iteration += 1
     self.iteration_per_round += 1
@@ -477,6 +487,8 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
         self.stats_logger.add('suicides', 1 if e.KILLED_SELF in events else 0)
         self.stats_logger.add('kills', self.kills)
         self.stats_logger.add('repeated', self.repeated / self.iteration_per_round * 100)
+        self.stats_logger.add('p-reward', self.positive)
+        self.stats_logger.add('n-reward', self.negative)
 
     self.bombs_dropped = 0
     self.invalid_moves = 0
@@ -484,6 +496,8 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     self.total_rewards = 0
     self.kills = 0
     self.repeated = 0
+    self.positive = 0
+    self.negative = 0
 
     self.stats_logger.output(self.round, self.iteration)
 
@@ -493,7 +507,7 @@ def reward_from_events(self, events: List[str]) -> int:
     Calculated the rewards for a given action based on its event list.
     Rewards are defined in the global variable GAME_REWARDS.
     """
-    game_rewards = {
+    """game_rewards = {
         # e.KILLED_OPPONENT: 50000,
         # ?
         e.KILLED_SELF: -100000,
@@ -533,6 +547,27 @@ def reward_from_events(self, events: List[str]) -> int:
         #MOVED_AWAY_FROM_BOMB_EVENT: 500,
         #MOVED_TOWARDS_BOMB_EVENT: - 500,
         # e.CRATE_DESTROYED: 1000,
+    }"""
+    game_rewards = {
+        e.KILLED_SELF: -150,
+        e.GOT_KILLED: -50,
+        e.INVALID_ACTION: -25,
+        REPEATED_FIELD_EVENT: -5,
+        MOVED_AWAY_FROM_BOMB_EVENT: 6,
+        e.WAITED: -4,
+        e.COIN_COLLECTED: +50,
+        MOVED_TOWARDS_COIN_EVENT: +10,
+        MOVED_AWAY_FROM_COIN_EVENT: -10,
+        MOVED_TOWARDS_CRATE_EVENT: +5,
+        MOVED_AWAY_FROM_CRATE_EVENT: -5,
+        PLACED_BOMB_DESTROY_ONE_EVENT: +20,
+        PLACED_BOMB_DESTROY_MULTIPLE_EVENT: +40,
+        PLACED_UNSAFE_BOMB_EVENT: -50,
+        e.BOMB_DROPPED: +5,
+        ESCAPE_BOMB_EVENT: +30,
+        NOT_FLEEING_CORRECTLY_EVENT: -30,
+        PLACED_BOMB_TRAPPED_ENEMY_EVENT: +50,
+        MOVED_TOWARDS_TRAP_EVENT: 50,
     }
     # game_rewards = {
     #    FOLLOWED_MARKER_EVENT: 1000,
