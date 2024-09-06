@@ -19,7 +19,7 @@ ACTION_TO_INDEX = {
     'UP': 0, 'DOWN': 1, 'LEFT': 2, 'RIGHT': 3, 'WAIT': 4, 'BOMB': 5
 }
 
-ACTIONS_PROBABILITIES = [0.2, 0.2, 0.2, 0.2, 0.195, 0.005]
+ACTIONS_PROBABILITIES = [0.2, 0.2, 0.2, 0.2, 0.18, 0.02]
 
 WIDTH = 17
 HEIGHT = 17
@@ -53,9 +53,10 @@ enemies: 0-3;4, 2^4=16 (UP, DOWN, LEFT, RIGHT) 								                         
 FEATURE_SHAPE = (4, 5, 5, 5, 6, 6, 7, 2, 2, 2, 2, len(ACTIONS))
 
 EPS_START = 0.5
-EPS_END = 0.0
+EPS_END = 0.05
 EPS_DECAY = 400000
 
+RELATIVE_ROUND_EXPLORATION_THRESHOLD = 0.8
 
 def setup(self):
     """
@@ -176,16 +177,16 @@ def action_from_features(features):
 
 
 def act(self, game_state: dict) -> str:
-    self.last_features = state_to_features(game_state, self.last_action)
-    self.last_action = action_from_features(self.last_features)
-    return ACTIONS[self.last_action]
+    #self.last_features = state_to_features(game_state, self.last_action)
+    #self.last_action = action_from_features(self.last_features)
+    #return ACTIONS[self.last_action]
     """
     :param self: The same object that is passed to all of your callbacks.
     :param game_state: The dictionary that describes everything on the board.
     :return: The action to take as a string.
     """
     random_prob = EPS_END + (EPS_START - EPS_END) * math.exp(-1. * self.iteration / EPS_DECAY)
-    if self.train and random.random() < random_prob and self.round % 2 == 0:
+    if self.train and random.random() < random_prob and self.round % 2 == 0 and self.round > 10 and self.iteration_per_round >= RELATIVE_ROUND_EXPLORATION_THRESHOLD * self.average_iterations:
         features = state_to_features(game_state, self.last_action)
         if features[0] > 1 and random.random() < 0.5:
             self.last_action = 5

@@ -579,6 +579,9 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
         self.stats_logger.add('p-reward', self.positive)
         self.stats_logger.add('n-reward', self.negative)
 
+        self.average_iterations = (sum(self.stats_logger.histories['iteration']) /
+                                   len(self.stats_logger.histories['iteration']))
+
     self.bombs_dropped = 0
     self.invalid_moves = 0
     self.iteration_per_round = 0
@@ -701,7 +704,7 @@ def reward_from_events(self, events: List[str]) -> int:
         if event in game_rewards:
             reward_sum += game_rewards[event]
 
-    #if reward_sum < 0:
+    # if reward_sum < 0:
     #    print(events)
 
     # if FOLLOWED_MARKER_EVENT in events and reward_sum < 0:
