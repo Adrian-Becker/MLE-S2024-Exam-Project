@@ -208,7 +208,7 @@ def add_custom_events(self, old_game_state: dict, self_action: str, new_game_sta
     # 0: up, 1: down, 2: left, 3: right
     # 4: wait
     # 5: bomb
-    action_index = -1
+    """action_index = -1
     if e.MOVED_UP in events:
         action_index = 0
     elif e.MOVED_DOWN in events:
@@ -220,7 +220,8 @@ def add_custom_events(self, old_game_state: dict, self_action: str, new_game_sta
     elif e.WAITED in events:
         action_index = 4
     elif e.BOMB_DROPPED in events:
-        action_index = 5
+        action_index = 5"""
+    action_index = ACTION_TO_INDEX[self_action]
 
     # we want to give priorities in the following way:
     # has to flee from bomb/trap !!!=> only care about this, ignore everything else
