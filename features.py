@@ -1501,7 +1501,7 @@ def determine_trap_enemy_directions(game_state, explosion_timer):
     position = game_state['self'][3]
     x, y = position
     if result[position] <= 0:
-        return 5
+        return np.array([0, 0, 0, 0])
 
     distances = np.array([
         find_path_to_trap((x, y - 1), field, result),
