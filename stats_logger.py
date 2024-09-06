@@ -16,10 +16,7 @@ AVERAGE_OFFSET = len(BOLD + '; ')
 class StatsLogger:
     def __init__(self, stats: list[Stat]):
         self.stats = stats
-        self.histories = {}
-        for stat in stats:
-            self.histories[stat[1]] = deque([0], maxlen=stat[3])
-        self.histories['time'] = deque([time.time()], maxlen=200)
+        self.histories = {'time': deque([time.time()], maxlen=200)}
         self.start_time = time.time()
 
         self.min_width_a1 = 0
@@ -38,16 +35,32 @@ class StatsLogger:
                 be used.
             value (int|float): The value to add to the history.
         """
-        self.histories[key].append(value)
+        if key in self.histories:
+            self.histories[key].append(value)
+        else:
+            stat = None
+            for s in self.stats:
+                if s[1] == key:
+                    stat = s
+                    break
+            self.histories[stat[1]] = deque([value], maxlen=stat[3])
+
 
     def _get_string_average(self, stat):
-        average = sum(self.histories[stat[1]]) / len(self.histories[stat[1]])
+        try:
+            average = sum(self.histories[stat[1]]) / len(self.histories[stat[1]])
+        except KeyError:
+            average = 0
         return ['avg. ' + stat[0],
                 BOLD + COLOR_FORMAT.format(stat[6]) + stat[5].format(average) + stat[7] + RESET + "; "]
 
     def _get_string_current_value(self, stat):
+        try:
+            value = self.histories[stat[1]][-1]
+        except KeyError:
+            value = 0
         return [stat[0],
-                COLOR_FORMAT.format(stat[6]) + stat[4].format(self.histories[stat[1]][-1]) + stat[7] + RESET]
+                COLOR_FORMAT.format(stat[6]) + stat[4].format(value) + stat[7] + RESET]
 
     def _prepare(self):
         for stat in self.stats:

@@ -50,7 +50,7 @@ enemies: 0-3;4, 2^4=16 (UP, DOWN, LEFT, RIGHT) 								                         
 = 40500
 """
 # FEATURE_SHAPE = (3, 3, 3, 3, 4, 5, 5, 5, len(ACTIONS))
-FEATURE_SHAPE = (4, 5, 5, 5, 5, 5, 5, 6, 2, 2, 2, 2, 5, len(ACTIONS))
+FEATURE_SHAPE = (4, 5, 5, 5, 6, 6, 7, 2, 2, 2, 2, len(ACTIONS))
 
 EPS_START = 0.5
 EPS_END = 0.0
@@ -91,7 +91,7 @@ def setup(self):
             # print(self.Q)
             pass
         print(f"Loaded {file_prefix}")
-        #print(self.Q[3, 4, 4, 4, 4, 4, 4, 5, 0, 0, 0, 0, 4])
+        # print(self.Q[3, 4, 4, 4, 4, 4, 4, 5, 0, 0, 0, 0, 4])
 
 
 def determine_next_action(game_state: dict, Q) -> str:
@@ -118,7 +118,8 @@ def get_feature_string(features):
                 ["danger", "no danger"],
                 ["up", "down", "left", "right", "no movement"]]
     feature_list = ["Current Square", "Bomb Direction", "Trap Fleeing Direction", "Coin Direction", "Crate Direction",
-                    "Enemy Direction", "Priority Marker", "Trap Setting Direction", "UP", "DOWN", "LEFT", "RIGHT", "previous field"]
+                    "Enemy Direction", "Priority Marker", "Trap Setting Direction", "UP", "DOWN", "LEFT", "RIGHT",
+                    "previous field"]
     for idx in range(len(features)):
         str += f"{feature_list[idx]}: {str_list[idx][features[idx]]}"
         if idx is not len(features) - 1:
@@ -127,48 +128,57 @@ def get_feature_string(features):
 
 
 def action_from_features(features):
-    # print(features)
-    marker = features[6]
-    if marker == 0:
-        return features[1]
+    current_square = features[0]
+    escape_direction = features[1]
+    trap_escape_direction = features[2]
+    coin_direction = features[3]
+    crate_direction = features[4]
+    enemy_direction = features[5]
+    trap_enemy_direction = features[6]
+    can_move_up = features[7]
+    can_move_down = features[8]
+    can_move_left = features[9]
+    can_move_right = features[10]
 
-    # trap if possible
-    if features[7] != 4:
-        # place bomb if possible
-        if features[7] == 5:
-            if features[0] > 1:
-                return 5
-        # otherwise follow direction
-        else:
-            return features[7]
-    if marker == 1:
-        return features[3]
-    if marker == 2:
-        if features[4] == 4:
-            if features[0] > 1:
-                return 5
-            else:
-                return 4
-        else:
-            return features[4]
-    if marker == 3:
-        if features[5] == 4:
-            if features[0] > 1:
-                return 5
-            else:
-                return 4
-        else:
-            return features[5]
-    if marker == 4:
-        return features[2]
-    print("WEIRD")
+    if current_square == 1:
+        return escape_direction
+
+    if trap_escape_direction != 4:
+        return trap_escape_direction
+
+    if trap_enemy_direction != 4:
+        if trap_enemy_direction == 6:
+            return 4
+        return trap_enemy_direction
+
+    if current_square == 3 and coin_direction != 4:
+        return 5
+
+    if coin_direction != 4:
+        return coin_direction
+
+    if crate_direction != 4:
+        return crate_direction
+
+    if enemy_direction != 4:
+        return enemy_direction
+
+    if can_move_up:
+        return 0
+    if can_move_down:
+        return 1
+    if can_move_left:
+        return 2
+    if can_move_right:
+        return 3
+
     return 4
 
 
 def act(self, game_state: dict) -> str:
-    #self.last_features = state_to_features(game_state, self.last_action)
-    #self.last_action = action_from_features(self.last_features)
-    #return ACTIONS[self.last_action]
+    self.last_features = state_to_features(game_state, self.last_action)
+    self.last_action = action_from_features(self.last_features)
+    return ACTIONS[self.last_action]
     """
     :param self: The same object that is passed to all of your callbacks.
     :param game_state: The dictionary that describes everything on the board.
@@ -233,65 +243,43 @@ def state_to_features(game_state: dict, last_action) -> np.array:
 
     bomb_input = prepare_escape_path_fields(game_state)
 
-    priority_marker = -1
-
     if current_square == 1:
         features.append(determine_escape_direction_scored(x, y, game_state, bomb_input)[0])
-        priority_marker = 0
     else:
         features.append(4)  # save_directions_scored(x, y, game_state, explosion_timer))
 
     direction = determine_trap_escape_direction_improved(game_state, explosion_timer)
     features.append(direction)
-    if direction < 4 and priority_marker < 0:
-        priority_marker = 4
 
     coins, min_distance_coins = determine_coin_value_scored(x, y, game_state, explosion_timer, trap_filter)
     features.append(coins)
-    if min_distance_coins < 64 and priority_marker < 0:
-        priority_marker = 1
 
     has_crates = False
     if current_square > 1 and count_crates > 0:
         worth_move = determine_is_worth_to_move_crates_scored(x, y, game_state, count_crates, explosion_timer,
                                                               trap_filter)
+        if worth_move == 4:
+            worth_move = 5
         features.append(worth_move)
         has_crates = True
-        if priority_marker < 0:
-            if worth_move < 4:
-                priority_marker = 2
-            elif current_square > 1:
-                priority_marker = 2
 
     if not has_crates:
         crates, min_distance_crates = determine_crate_value_scored(x, y, game_state, explosion_timer, trap_filter)
         features.append(crates)
-        if crates < 4 and priority_marker < 0:
-            priority_marker = 2
 
     has_enemies = False
     if current_square > 1 and count_enemies > 0:
         worth_move = determine_is_worth_to_move_enemies_scored(x, y, game_state, count_enemies, explosion_timer,
                                                                trap_filter)
+        if worth_move == 4:
+            worth_move = 5
+
         features.append(worth_move)
         has_enemies = True
-        if worth_move < 4 and priority_marker < 0:
-            priority_marker = 3
 
     if not has_enemies:
         enemies, min_distance_enemies = determine_enemy_value_scored(x, y, game_state, explosion_timer, trap_filter)
         features.append(enemies)
-        if enemies < 4 and priority_marker < 0:
-            priority_marker = 3
-
-    if priority_marker < 0 and current_square > 1:
-        if count_crates > 0:
-            priority_marker = 2
-        else:
-            priority_marker = 3
-
-    priority_marker = max(priority_marker, 0)
-    features.append(priority_marker)
 
     features.append(determine_trap_enemy_direction(game_state, explosion_timer))
 
@@ -301,6 +289,6 @@ def state_to_features(game_state: dict, last_action) -> np.array:
     features.append(1 if field[x - 1, y] == 0 else 0)
     features.append(1 if field[x + 1, y] == 0 else 0)
 
-    features.append(np.clip(last_action, 0, 4))
+    #features.append(np.clip(last_action, 0, 4))
 
     return tuple(features)

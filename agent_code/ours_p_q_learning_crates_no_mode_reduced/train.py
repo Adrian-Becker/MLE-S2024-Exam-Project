@@ -12,7 +12,10 @@ import numpy as np
 import events as e
 from .callbacks import state_to_features, ACTION_TO_INDEX, ACTION_INDICES, EPS_START, EPS_END, EPS_DECAY
 from features import breadth_first_search, prepare_field_coins, determine_explosion_timer, count_destroyable_crates, \
-    determine_coin_value_scored_reward, determine_crate_value_scored_reward
+    determine_coin_value_scored_reward, determine_crate_value_scored_reward, prepare_escape_path_fields, \
+    determine_escape_direction, determine_trap_escape_directions_improved, determine_trap_enemy_directions, \
+    determine_trap_filter, determine_is_worth_to_move_crates_scored_reward, count_destroyable_enemies, \
+    determine_enemy_value_scored_reward, determine_is_worth_to_move_enemies_trap_filter
 
 from rewards import distance_to_nearest_bomb
 
@@ -33,35 +36,36 @@ BATCH_SIZE = 128
 EPOCHS_PER_ROUND = 10
 
 # Events
-MOVED_TOWARDS_COIN_EVENT = "Moved Towards Coin"
-MOVED_AWAY_FROM_COIN_EVENT = "Moved Away from Coin"
-ESCAPE_BOMB_EVENT = "Escape Bomb"
-WAITED_WITHOUT_NEED_EVENT = "Waited Without Need"
+FLEEING_CORRECTLY_EVENT = "Fleeing Correctly"
+NOT_FLEEING_CORRECTLY_EVENT = "Not Fleeing Correctly"
+
+FLEEING_TRAP_CORRECTLY_EVENT = "Fleeing Trap Correctly"
+NOT_FLEEING_TRAP_CORRECTLY_EVENT = "Not Fleeing Trap Correcly"
+
+MOVED_TOWARDS_TRAP_EVENT = "Moved towards trap event"
+NOT_MOVED_TOWARDS_TRAP_EVENT = "Not Moved towards trap event"
+
+PLACED_BOMB_TRAPPED_ENEMY_EVENT = "Placed Bomb Trapped Enemy Event"
+NOT_PLACED_BOMB_TRAPPED_ENEMY_EVENT = "Not Placed Bomb Trapped Enemy Event"
 
 PLACED_BOMB_DESTROY_ONE_EVENT = "Placed Bomb Safely Destroy One"
 PLACED_BOMB_DESTROY_MULTIPLE_EVENT = "Placed Bomb Safely Destroy Multiple"
+NOT_PLACED_BOMB_DESTROY_ONE_EVENT = "Not Placed Bomb Safely Destroy One"
+NOT_PLACED_BOMB_DESTROY_MULTIPLE_EVENT = "Not Placed Bomb Safely Destroy Multiple"
 PLACED_UNSAFE_BOMB_EVENT = "Paced Unsafe Bomb"
-PLACED_BOMB_TRAPPED_ENEMY_EVENT = "Placed Bomb Trapped Enemy Event"
 
-MOVED_TOWARDS_TRAP_EVENT = "Moved towards trap event"
-
-REPEATED_FIELD_EVENT = "Repeated Field"
-
-PLACE_BOMB_TARGET_CRATE_EVENT = "Place Bomb Target Crate"
-
-NOT_FLEEING_CORRECTLY_EVENT = "Not Fleeing Correctly"
-
-FOLLOWED_MARKER_EVENT = "Followed Marker"
-DID_NOT_FOLLOW_MARKER_EVENT = "Did not Follow Marker"
-
-MOVED_AWAY_FROM_BOMB_EVENT = "Moved away from bomb"
-MOVED_TOWARDS_BOMB_EVENT = "Moved towards bomb"
-
-INCREASED_DESTROYABLE_CRATES_COUNT = "Increased destroyable crates count"
-DECREASED_DESTROYABLE_CRATES_COUNT = "Decreased destroyable crates count"
+MOVED_TOWARDS_COIN_EVENT = "Moved Towards Coin"
+NOT_MOVED_TOWARDS_COIN_EVENT = "Not Moved Towards Coin"
 
 MOVED_TOWARDS_CRATE_EVENT = "Moved Towards Crate"
-MOVED_AWAY_FROM_CRATE_EVENT = "Moved Away from Crate"
+NOT_MOVED_TOWARDS_CRATE_EVENT = "Not Moved Towards Crate"
+CRATE_PLACED_BOMB = "Placed Bomb Crate"
+NOT_CRATE_PLACED_BOMB = "Not Placed Bomb Crate"
+
+MOVED_TOWARDS_ENEMY_EVENT = "Moved Towards Enemy"
+NOT_MOVED_TOWARDS_ENEMY_EVENT = "Not Moved Towards Enemy"
+ENEMY_PLACED_BOMB = "Placed Bomb Enemy"
+NOT_ENEMY_PLACED_BOMB = "Not Placed Bomb Enemy"
 
 LEARNING_RATE = 0.1
 DISCOUNT_FACTOR = 0.9
@@ -78,7 +82,8 @@ CONVERSIONS = [
         2: 2,
         3: 3,
         4: 4,
-        5: 5
+        5: 5,
+        6: 6
     },
     {
         # mirror left/right
@@ -87,7 +92,8 @@ CONVERSIONS = [
         2: 3,
         3: 2,
         4: 4,
-        5: 5
+        5: 5,
+        6: 6
     },
     {
         # mirror top/bottom
@@ -96,7 +102,8 @@ CONVERSIONS = [
         2: 2,
         3: 3,
         4: 4,
-        5: 5
+        5: 5,
+        6: 6
     },
     {
         # rotate 90deg
@@ -105,7 +112,8 @@ CONVERSIONS = [
         2: 1,
         3: 0,
         4: 4,
-        5: 5
+        5: 5,
+        6: 6
     },
     {
         # rotate 180deg
@@ -114,7 +122,8 @@ CONVERSIONS = [
         2: 3,
         3: 2,
         4: 4,
-        5: 5
+        5: 5,
+        6: 6
     },
     {
         # rotate 270deg
@@ -123,7 +132,8 @@ CONVERSIONS = [
         2: 0,
         3: 1,
         4: 4,
-        5: 5
+        5: 5,
+        6: 6
     }
 ]
 
@@ -144,7 +154,7 @@ def setup_training(self):
         Stat('P(copy enemy)', 'p-enemy', False, 1, '{:5.2f}', '', 36, '%'),
         Stat('P(exploration)', 'p-explo', False, 1, '{:5.2f}', '', 36, '%'),
         Stat('bombs', 'bombs', True, 50, '{:3d}', '{:6.2f}', 31, ' '),
-        Stat('rewards', 'rewards', True, 50, '{:7d}', '{:9.2f}', 32, ' '),
+        Stat('rewards', 'rewards', True, 50, '{:12d}', '{:14.2f}', 32, ' '),
         Stat('iterations p. round', 'iteration', True, 50, '{:3d}', '{:6.2f}', 35, ' '),
         Stat('invalid moves', 'invalid', True, 50, '{:5.2f}', '{:5.2f}', 35, '%'),
         Stat('kills', 'kills', True, 50, '{:1d}', '{:4.2f}', 34, ' '),
@@ -178,10 +188,26 @@ def setup_training(self):
 
 def add_custom_events(self, old_game_state: dict, self_action: str, new_game_state: dict, events: List[str],
                       features_old, features_new):
-    explosion_timer_old = determine_explosion_timer(old_game_state)
-    explosion_timer_new = determine_explosion_timer(new_game_state)
+    # used for computation later on
+    explosion_timer = determine_explosion_timer(old_game_state)
+    x, y = old_game_state["self"][3]
+    current_square = features_old[0]
+    escape_direction = features_old[1]
+    trap_escape_direction = features_old[2]
+    coin_direction = features_old[3]
+    crate_direction = features_old[4]
+    enemy_direction = features_old[5]
+    trap_enemy_direction = features_old[6]
+    can_move_up = features_old[7]
+    can_move_down = features_old[8]
+    can_move_left = features_old[9]
+    can_move_right = features_old[10]
 
-    # moved closer/further away from coin event
+    # convert the action we are doing into an index
+    # -1: invalid
+    # 0: up, 1: down, 2: left, 3: right
+    # 4: wait
+    # 5: bomb
     action_index = -1
     if e.MOVED_UP in events:
         action_index = 0
@@ -196,127 +222,153 @@ def add_custom_events(self, old_game_state: dict, self_action: str, new_game_sta
     elif e.BOMB_DROPPED in events:
         action_index = 5
 
-    # move towards/away from coin event
-    if 0 <= action_index <= 3:
-        directions = determine_coin_value_scored_reward(*old_game_state['self'][3], old_game_state, explosion_timer_old)
-        if directions.max() >= 1:
-            if directions[action_index] == 1:
-                events.append(MOVED_TOWARDS_COIN_EVENT)
-            else:
-                events.append(MOVED_AWAY_FROM_COIN_EVENT)
+    # we want to give priorities in the following way:
+    # has to flee from bomb/trap !!!=> only care about this, ignore everything else
+    # can collect coin => only care about coin (and maybe exploding things)
+    # can't collect coin but move towards crate/explode crate => only care about crate (and maybe exploding other stuff)
+    # can't collect coin + move towards crate/explode crate but move towards enemy => only care about enemy
 
-    # move towards/away from crate event
-    if 0 <= action_index <= 3:
-        directions = determine_crate_value_scored_reward(*old_game_state['self'][3], old_game_state,
-                                                         explosion_timer_old)
-        if directions.max() >= 1:
-            if directions[action_index] == 1:
-                events.append(MOVED_TOWARDS_CRATE_EVENT)
-            else:
-                events.append(MOVED_AWAY_FROM_CRATE_EVENT)
+    # check if we placed a bomb that will kill us
+    # CORRESPONDING EVENTS: PLACED_UNSAFE_BOMB_EVENT
+    if current_square == 0 and action_index == 5:
+        events.append(PLACED_UNSAFE_BOMB_EVENT)
 
-    if e.BOMB_DROPPED not in events:
-        if explosion_timer_old[old_game_state['self'][3]] < 1000 and \
-                explosion_timer_new[new_game_state['self'][3]] == 1000:
-            events.append(ESCAPE_BOMB_EVENT)
-
-    # event rewarding the agent to move away from bombs
-    if features_old[1]:
-        distance_to_bomb_old = distance_to_nearest_bomb(old_game_state)
-        distance_to_bomb_new = distance_to_nearest_bomb(new_game_state)
-        if distance_to_bomb_new < 3 or distance_to_bomb_old < 3:
-            if distance_to_bomb_old < distance_to_bomb_new:
-                events.append(MOVED_AWAY_FROM_BOMB_EVENT)
-            else:
-                events.append(MOVED_TOWARDS_BOMB_EVENT)
-
-    # event rewarding the agent to move to a square where he is exploding more crates
-    old_x, old_y = old_game_state['self'][3]
-    new_x, new_y = new_game_state['self'][3]
-    old_count_destroyable_crates = count_destroyable_crates(old_x, old_y, old_game_state, explosion_timer_old)
-    new_count_destroyable_crates = count_destroyable_crates(new_x, new_y, old_game_state, explosion_timer_old)
-    if new_count_destroyable_crates > old_count_destroyable_crates:
-        events.append(INCREASED_DESTROYABLE_CRATES_COUNT)
-    elif new_count_destroyable_crates < old_count_destroyable_crates:
-        events.append(DECREASED_DESTROYABLE_CRATES_COUNT)
-
-    if e.BOMB_DROPPED in events:
-        if features_old[0] == 2:
-            events.append(PLACED_BOMB_DESTROY_ONE_EVENT)
-        elif features_old[0] == 3:
-            events.append(PLACED_BOMB_DESTROY_MULTIPLE_EVENT)
-        """    
-        if features_old[0] > 1:
-            x, y = old_game_state['self'][3]
-            count_crates = count_destroyable_crates(x, y, old_game_state, explosion_timer_old)
-            for _ in range(count_crates):
-                events.append(PLACE_BOMB_TARGET_CRATE_EVENT)
-        """
-        if features_old[0] == 0:
-            events.append(PLACED_UNSAFE_BOMB_EVENT)
-
-        if features_old[7] == 5:
-            events.append(PLACED_BOMB_TRAPPED_ENEMY_EVENT)
-
-    if features_old[7] != 4 and features_old[7] == action_index:
-        events.append(MOVED_TOWARDS_TRAP_EVENT)
-
-    """
-    if e.WAITED in events:
-        marker = features_old[6]
-        if 0 < marker < 4:
-            marker += 1
-        if marker == 4:
-            marker = 1
-        if features_old[marker + 1] != 4:
-            events.append(WAITED_WITHOUT_NEED_EVENT)
-    """
-
-    if features_old[1] < 4:
-        if features_old[1] == 0:
-            if e.MOVED_UP not in events:
+    # we need flee from a bomb!!! ignore everything else
+    # CORRESPONDING EVENTS: FLEEING_CORRECTLY_EVENT; NOT_FLEEING_CORRECTLY_EVENT
+    if current_square == 1:
+        possible_escape_directions = determine_escape_direction(x, y, old_game_state,
+                                                                prepare_escape_path_fields(old_game_state))
+        if possible_escape_directions.max() > 0:
+            if action_index >= 4 or action_index == -1:
                 events.append(NOT_FLEEING_CORRECTLY_EVENT)
-        elif features_old[1] == 1:
-            if e.MOVED_DOWN not in events:
-                events.append(NOT_FLEEING_CORRECTLY_EVENT)
-        elif features_old[1] == 2:
-            if e.MOVED_LEFT not in events:
-                events.append(NOT_FLEEING_CORRECTLY_EVENT)
+            else:
+                events.append(FLEEING_CORRECTLY_EVENT
+                              if possible_escape_directions[action_index] == 1 else NOT_FLEEING_CORRECTLY_EVENT)
+        return
+
+    # we need to flee from a trap!!! ignore everything else, we first check based on the feature if we need to flee to
+    # save computation
+    # CORRESPONDING EVENTS: FLEEING_TRAP_CORRECTLY_EVENT; NOT_FLEEING_TRAP_CORRECTLY_EVENT
+    if trap_escape_direction != 4:
+        _, trap_fleeing_directions = determine_trap_escape_directions_improved(old_game_state, explosion_timer)
+        if trap_fleeing_directions.max() > 0:
+            if action_index >= 4 or action_index == -1:
+                events.append(NOT_FLEEING_TRAP_CORRECTLY_EVENT)
+            else:
+                events.append(FLEEING_TRAP_CORRECTLY_EVENT
+                              if trap_fleeing_directions[action_index] == 1 else NOT_FLEEING_TRAP_CORRECTLY_EVENT)
+        return
+
+    # check if we can trap an enemy, to save computation, we first check based on the features if there even exists such
+    # a direction
+    # CORRESPONDING EVENTS: MOVED_TOWARDS_TRAP_EVENT; NOT_MOVED_TOWARDS_TRAP_EVENT;
+    #                       PLACED_BOMB_TRAPPED_ENEMY_EVENT; NOT_PLACED_BOMB_TRAPPED_ENEMY_EVENT
+    if trap_enemy_direction != 4:
+        # we should place a bomb to (hopefully) kill an enemy
+        if trap_enemy_direction == 5:
+            events.append(PLACED_BOMB_TRAPPED_ENEMY_EVENT if action_index == 5 else NOT_PLACED_BOMB_TRAPPED_ENEMY_EVENT)
+        elif trap_enemy_direction == 6 and action_index == 4:
+            events.append(MOVED_TOWARDS_TRAP_EVENT)
+        elif action_index >= 4 or action_index == -1:
+            events.append(NOT_MOVED_TOWARDS_TRAP_EVENT)
         else:
-            if e.MOVED_RIGHT not in events:
-                events.append(NOT_FLEEING_CORRECTLY_EVENT)
+            directions = determine_trap_enemy_directions(old_game_state, explosion_timer)
+            events.append(MOVED_TOWARDS_TRAP_EVENT if directions[action_index] == 1 else NOT_MOVED_TOWARDS_TRAP_EVENT)
 
-    """
-    if action_index == -1:
-        events.append(DID_NOT_FOLLOW_MARKER_EVENT)
-    else:
-        marker = features_old[6]
-        if marker == 0:
-            events.append(FOLLOWED_MARKER_EVENT if action_index == features_old[1] else DID_NOT_FOLLOW_MARKER_EVENT)
-        elif marker == 1:
-            events.append(FOLLOWED_MARKER_EVENT if action_index == features_old[3] else DID_NOT_FOLLOW_MARKER_EVENT)
-        elif marker == 2:
-            if features_old[4] == 4:
-                if features_old[0] > 1:
-                    events.append(FOLLOWED_MARKER_EVENT if action_index == 5 else DID_NOT_FOLLOW_MARKER_EVENT)
+    # check if placing a bomb might be a good idea, for this we use a feature to save computation instead of calling the
+    # corresponding function
+    # CORRESPONDING EVENTS: PLACED_BOMB_DESTROY_ONE_EVENT; NOT_PLACED_BOMB_DESTROY_ONE_EVENT;
+    #                       PLACED_BOMB_DESTROY_MULTIPLE_EVENT; NOT_PLACED_BOMB_DESTROY_MULTIPLE_EVENT
+    if current_square > 1:
+        if current_square == 2:
+            events.append(PLACED_BOMB_DESTROY_ONE_EVENT if action_index == 5
+                          else NOT_PLACED_BOMB_DESTROY_ONE_EVENT)
+        else:
+            events.append(PLACED_BOMB_DESTROY_MULTIPLE_EVENT if action_index == 5
+                          else NOT_PLACED_BOMB_DESTROY_MULTIPLE_EVENT)
+
+    # check if there are coins we can move to, to save computation, we first check based on the features if there even
+    # exists such a direction
+    # CORRESPONDING EVENTS: MOVED_TOWARDS_COIN_EVENT; NOT_MOVED_TOWARDS_COIN_EVENT
+    if coin_direction != 4:
+        if action_index >= 4 or action_index == -1:
+            events.append(NOT_MOVED_TOWARDS_COIN_EVENT)
+        else:
+            # used to filter out directions that may get us trapped
+            trap_filter = determine_trap_filter(old_game_state, explosion_timer)
+
+            directions = determine_coin_value_scored_reward(*old_game_state['self'][3], old_game_state, explosion_timer,
+                                                            trap_filter)
+            if directions.max() >= 1:
+                if directions[action_index] == 1:
+                    events.append(MOVED_TOWARDS_COIN_EVENT)
                 else:
-                    events.append(FOLLOWED_MARKER_EVENT if action_index == 4 else DID_NOT_FOLLOW_MARKER_EVENT)
+                    events.append(NOT_MOVED_TOWARDS_COIN_EVENT)
+        return
+
+    # check if there are crates we can move to, to save computation, we first check based on the features if there even
+    # exists such a direction
+    # CORRESPONDING EVENTS: MOVED_TOWARDS_CRATE_EVENT; NOT_MOVED_TOWARDS_CRATE_EVENT;
+    #                       CRATE_PLACED_BOMB; NOT_CRATE_PLACED_BOMB
+    if crate_direction != 4:
+        if crate_direction == 5:
+            # can place bomb to destroy crates
+            events.append(CRATE_PLACED_BOMB if action_index == 5 else NOT_CRATE_PLACED_BOMB)
+        elif action_index >= 4 or action_index == -1:
+            events.append(NOT_MOVED_TOWARDS_CRATE_EVENT)
+        else:
+            # used to filter out directions that may get us trapped
+            trap_filter = determine_trap_filter(old_game_state, explosion_timer)
+
+            count_crates = count_destroyable_crates(x, y, old_game_state, explosion_timer)
+
+            if current_square <= 1 or count_crates == 0:
+                directions = determine_crate_value_scored_reward(*old_game_state['self'][3], old_game_state,
+                                                                 explosion_timer, trap_filter)
             else:
-                events.append(FOLLOWED_MARKER_EVENT if action_index == features_old[4] else DID_NOT_FOLLOW_MARKER_EVENT)
-        elif marker == 3:
-            if features_old[5] == 4:
-                if features_old[0] > 1:
-                    events.append(FOLLOWED_MARKER_EVENT if action_index == 5 else DID_NOT_FOLLOW_MARKER_EVENT)
+                directions = determine_is_worth_to_move_crates_scored_reward(x, y, old_game_state, count_crates,
+                                                                             explosion_timer, trap_filter)
+
+            if directions.max() >= 1:
+                if directions[action_index] == 1:
+                    events.append(MOVED_TOWARDS_CRATE_EVENT)
                 else:
-                    events.append(FOLLOWED_MARKER_EVENT if action_index == 4 else DID_NOT_FOLLOW_MARKER_EVENT)
+                    events.append(NOT_MOVED_TOWARDS_CRATE_EVENT)
+        return
+
+    # check if there are enemies we can move to, to save computation, we first check based on the features if there even
+    # exists such a direction
+    # CORRESPONDING EVENTS: MOVED_TOWARDS_ENEMY_EVENT; NOT_MOVED_TOWARDS_ENEMY_EVENT
+    #                       ENEMY_PLACED_BOMB; NOT_ENEMY_PLACED_BOMB
+    if enemy_direction != 4:
+        if enemy_direction == 5:
+            # can place bomb to destroy enemies
+            events.append(ENEMY_PLACED_BOMB if action_index == 5 else NOT_ENEMY_PLACED_BOMB)
+        elif action_index >= 4 or action_index == -1:
+            events.append(NOT_MOVED_TOWARDS_ENEMY_EVENT)
+        else:
+            # used to filter out directions that may get us trapped
+            trap_filter = determine_trap_filter(old_game_state, explosion_timer)
+
+            count_enemies = count_destroyable_enemies(x, y, old_game_state, explosion_timer)
+            if current_square <= 1 or count_enemies == 0:
+                directions = determine_enemy_value_scored_reward(x, y, old_game_state, explosion_timer, trap_filter)
             else:
-                events.append(FOLLOWED_MARKER_EVENT if action_index == features_old[5] else DID_NOT_FOLLOW_MARKER_EVENT)
-    """
+                directions = determine_is_worth_to_move_enemies_trap_filter(x, y, old_game_state, count_enemies,
+                                                                            explosion_timer, trap_filter)
+
+            if directions.max() >= 1:
+                if directions[action_index] == 1:
+                    events.append(MOVED_TOWARDS_ENEMY_EVENT)
+                else:
+                    events.append(NOT_MOVED_TOWARDS_ENEMY_EVENT)
+        return
+
 
 def convert_features(conversion, features, action):
     return (features[0], conversion[features[1]], conversion[features[2]], conversion[features[3]],
-            conversion[features[4]], conversion[features[5]], features[6], conversion[features[7]]) + \
-            transmute_neighbors(conversion, features[8: 12]) + (conversion[features[12]], conversion[action])
+            conversion[features[4]], conversion[features[5]], conversion[features[6]]) + \
+        transmute_neighbors(conversion, features[7: 11]) + (conversion[action],)
 
 
 def learning_step(self, transition: Transition):
@@ -340,18 +392,11 @@ def learning_step(self, transition: Transition):
         self.P[converted_features] = result_P
 
 
-
 def handle_event_occurrence(self, old_game_state: dict, self_action: str, new_game_state: dict, events: List[str],
                             is_us=False):
     features_old = self.last_features
     action_old = ACTION_TO_INDEX[self_action]
     features_new = state_to_features(new_game_state, action_old)
-
-    if is_us:
-        if new_game_state['self'][3] in self.field_history and min(features_old[1:6]) < 4:
-            events.append(REPEATED_FIELD_EVENT)
-            self.repeated += 1
-        self.field_history.append(new_game_state['self'][3])
 
     add_custom_events(self, old_game_state, self_action, new_game_state, events, features_old, features_new)
 
@@ -361,6 +406,8 @@ def handle_event_occurrence(self, old_game_state: dict, self_action: str, new_ga
     transition = Transition(features_old, action_old, features_new, rewards)
     # learning_step(self, transition)
     self.transitions.append(transition)
+
+    return rewards
 
 
 def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_state: dict, events: List[str]):
@@ -377,8 +424,7 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
     """
     self.logger.debug(f'Encountered game event(s) {", ".join(map(repr, events))} in step {new_game_state["step"]}')
 
-    handle_event_occurrence(self, old_game_state, self_action, new_game_state, events, True)
-    rewards = reward_from_events(self, events)
+    rewards = handle_event_occurrence(self, old_game_state, self_action, new_game_state, events, True)
     self.total_rewards += rewards
     if rewards > 0:
         self.positive += 1
@@ -493,7 +539,7 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     self.transitions.append(
         Transition(self.last_features,
                    ACTION_TO_INDEX[last_action],
-                   (3, 4, 4, 4, 4, 4, 4, 5, 0, 0, 0, 0, 4), reward_from_events(self, events))
+                   (3, 4, 4, 4, 4, 4, 5, 0, 0, 0, 0), reward_from_events(self, events))
     )
 
     for _ in range(EPOCHS_PER_ROUND):
@@ -503,8 +549,8 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     self.round += 1
 
     if self.round % SYMMETRY_SYNC_RATE == 0:
-        #self.Q = sync_symmetries(self.Q)
-        #self.P = sync_symmetries(self.P)
+        # self.Q = sync_symmetries(self.Q)
+        # self.P = sync_symmetries(self.P)
         pass
 
     if self.round % ROUNDS_PER_SAVE == 0:
@@ -591,7 +637,7 @@ def reward_from_events(self, events: List[str]) -> int:
         #MOVED_TOWARDS_BOMB_EVENT: - 500,
         # e.CRATE_DESTROYED: 1000,
     }"""
-    game_rewards = {
+    """game_rewards = {
         e.KILLED_SELF: -150,
         e.GOT_KILLED: -50,
         e.INVALID_ACTION: -25,
@@ -611,6 +657,39 @@ def reward_from_events(self, events: List[str]) -> int:
         NOT_FLEEING_CORRECTLY_EVENT: -30,
         PLACED_BOMB_TRAPPED_ENEMY_EVENT: +50,
         MOVED_TOWARDS_TRAP_EVENT: 50,
+    }"""
+    game_rewards = {
+        FLEEING_CORRECTLY_EVENT: 100,
+        NOT_FLEEING_CORRECTLY_EVENT: -1000,
+
+        FLEEING_TRAP_CORRECTLY_EVENT: 100,
+        NOT_FLEEING_TRAP_CORRECTLY_EVENT: -1000,
+
+        MOVED_TOWARDS_TRAP_EVENT: 1000000,
+        NOT_MOVED_TOWARDS_TRAP_EVENT: -10000000,
+
+        PLACED_BOMB_TRAPPED_ENEMY_EVENT: 5000000,
+        NOT_PLACED_BOMB_TRAPPED_ENEMY_EVENT: -50000000,
+
+        # TODO IMPORTANT CHANGE THIS WHEN TRAINING FOR CLASSIC MODE
+        PLACED_BOMB_DESTROY_ONE_EVENT: 10,
+        PLACED_BOMB_DESTROY_MULTIPLE_EVENT: 2000,
+        NOT_PLACED_BOMB_DESTROY_ONE_EVENT: -10,
+        NOT_PLACED_BOMB_DESTROY_MULTIPLE_EVENT: -20000,
+        PLACED_UNSAFE_BOMB_EVENT: -1000000000,
+
+        MOVED_TOWARDS_COIN_EVENT: 100,
+        NOT_MOVED_TOWARDS_COIN_EVENT: -1000,
+
+        MOVED_TOWARDS_CRATE_EVENT: 30000,
+        NOT_MOVED_TOWARDS_CRATE_EVENT: -300000,
+        CRATE_PLACED_BOMB: 30000,
+        NOT_CRATE_PLACED_BOMB: -300000,
+
+        MOVED_TOWARDS_ENEMY_EVENT: 30000,
+        NOT_MOVED_TOWARDS_ENEMY_EVENT: -300000,
+        ENEMY_PLACED_BOMB: 30000,
+        NOT_ENEMY_PLACED_BOMB: -300000
     }
     # game_rewards = {
     #    FOLLOWED_MARKER_EVENT: 1000,
@@ -621,6 +700,9 @@ def reward_from_events(self, events: List[str]) -> int:
     for event in events:
         if event in game_rewards:
             reward_sum += game_rewards[event]
+
+    #if reward_sum < 0:
+    #    print(events)
 
     # if FOLLOWED_MARKER_EVENT in events and reward_sum < 0:
     #    print(f"Good move, negative reward {events}")
