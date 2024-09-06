@@ -267,8 +267,8 @@ def add_custom_events(self, old_game_state: dict, self_action: str, new_game_sta
         # we should place a bomb to (hopefully) kill an enemy
         if trap_enemy_direction == 5:
             events.append(PLACED_BOMB_TRAPPED_ENEMY_EVENT if action_index == 5 else NOT_PLACED_BOMB_TRAPPED_ENEMY_EVENT)
-        elif trap_enemy_direction == 6 and action_index == 4:
-            events.append(MOVED_TOWARDS_TRAP_EVENT)
+        elif trap_enemy_direction == 6:
+            events.append(MOVED_TOWARDS_TRAP_EVENT if action_index == 4 else NOT_MOVED_TOWARDS_TRAP_EVENT)
         elif action_index >= 4 or action_index == -1:
             events.append(NOT_MOVED_TOWARDS_TRAP_EVENT)
         else:
