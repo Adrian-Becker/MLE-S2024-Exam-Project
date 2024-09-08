@@ -50,13 +50,14 @@ enemies: 0-3;4, 2^4=16 (UP, DOWN, LEFT, RIGHT) 								                         
 = 40500
 """
 # FEATURE_SHAPE = (3, 3, 3, 3, 4, 5, 5, 5, len(ACTIONS))
-FEATURE_SHAPE = (4, 5, 5, 5, 6, 6, 7, 2, 2, 2, 2, len(ACTIONS))
+FEATURE_SHAPE = (4, 5, 5, 6, 6, 7, 5, len(ACTIONS))
 
 EPS_START = 0.5
 EPS_END = 0.05
 EPS_DECAY = 400000
 
 RELATIVE_ROUND_EXPLORATION_THRESHOLD = 0.8
+
 
 def setup(self):
     """
@@ -178,16 +179,16 @@ def action_from_features(features):
 
 
 def act(self, game_state: dict) -> str:
-    #self.last_features = state_to_features(game_state, self.last_action)
-    #self.last_action = action_from_features(self.last_features)
-    #return ACTIONS[self.last_action]
+    # self.last_features = state_to_features(game_state, self.last_action)
+    # self.last_action = action_from_features(self.last_features)
+    # return ACTIONS[self.last_action]
     """
     :param self: The same object that is passed to all of your callbacks.
     :param game_state: The dictionary that describes everything on the board.
     :return: The action to take as a string.
     """
     random_prob = EPS_END + (EPS_START - EPS_END) * math.exp(-1. * self.iteration / EPS_DECAY)
-    if self.train and random.random() < random_prob and self.round % 2 == 0 and self.round > 10 and self.iteration_per_round >= RELATIVE_ROUND_EXPLORATION_THRESHOLD * self.average_iterations:
+    if self.train and random.random() < random_prob and self.round % 3 != 0 and self.round > 10 and self.iteration_per_round >= RELATIVE_ROUND_EXPLORATION_THRESHOLD * self.average_iterations:
         features = state_to_features(game_state, self.last_action)
         if features[0] > 1 and random.random() < 0.5:
             self.last_action = 5
@@ -235,25 +236,34 @@ def state_to_features(game_state: dict, last_action) -> np.array:
 
     features = []
 
+    found_move_direction = False
+
     explosion_timer = determine_explosion_timer(game_state)
     count_crates, count_enemies = count_destroyable_crates_and_enemies(x, y, game_state, explosion_timer)
 
     trap_filter = determine_trap_filter(game_state, explosion_timer)
 
     current_square = determine_current_square(x, y, game_state, count_crates + count_enemies)
+    if current_square > 1:
+        found_move_direction = True
     features.append(current_square)
 
     bomb_input = prepare_escape_path_fields(game_state)
 
     if current_square == 1:
+        # bomb fleeing direction
         features.append(determine_escape_direction_scored(x, y, game_state, bomb_input)[0])
+        found_move_direction = True
     else:
-        features.append(4)  # save_directions_scored(x, y, game_state, explosion_timer))
-
-    direction = determine_trap_escape_direction_improved(game_state, explosion_timer)
-    features.append(direction)
+        # trap fleeing direction
+        direction = determine_trap_escape_direction_improved(game_state, explosion_timer)
+        if direction != 4:
+            found_move_direction = True
+        features.append(direction)
 
     coins, min_distance_coins = determine_coin_value_scored(x, y, game_state, explosion_timer, trap_filter)
+    if coins != 4:
+        found_move_direction = True
     features.append(coins)
 
     has_crates = False
@@ -267,6 +277,8 @@ def state_to_features(game_state: dict, last_action) -> np.array:
 
     if not has_crates:
         crates, min_distance_crates = determine_crate_value_scored(x, y, game_state, explosion_timer, trap_filter)
+        if crates != 4:
+            found_move_direction = True
         features.append(crates)
 
     has_enemies = False
@@ -281,16 +293,26 @@ def state_to_features(game_state: dict, last_action) -> np.array:
 
     if not has_enemies:
         enemies, min_distance_enemies = determine_enemy_value_scored(x, y, game_state, explosion_timer, trap_filter)
+        if enemies != 4:
+            found_move_direction = True
         features.append(enemies)
 
-    features.append(determine_trap_enemy_direction(game_state, explosion_timer))
+    trap_direction = determine_trap_enemy_direction(game_state, explosion_timer)
+    if trap_direction != 4:
+        found_move_direction = True
+    features.append(trap_direction)
 
-    field, _ = prepare_field_coins(game_state, explosion_timer)
-    features.append(1 if field[x, y - 1] == 0 else 0)
-    features.append(1 if field[x, y + 1] == 0 else 0)
-    features.append(1 if field[x - 1, y] == 0 else 0)
-    features.append(1 if field[x + 1, y] == 0 else 0)
-
-    #features.append(np.clip(last_action, 0, 4))
+    if found_move_direction:
+        features.append(4)
+    else:
+        field, _ = prepare_field_coins(game_state, explosion_timer)
+        directions = np.array([(1 if field[x, y - 1] == 0 else 0),
+                               (1 if field[x, y + 1] == 0 else 0),
+                               (1 if field[x - 1, y] == 0 else 0),
+                               (1 if field[x + 1, y] == 0 else 0)])
+        if directions.max() > 0:
+            features.append(4)
+        else:
+            features.append(np.random.choice(np.flatnonzero(directions == directions.max())))
 
     return tuple(features)
