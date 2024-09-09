@@ -229,8 +229,7 @@ def state_to_features(game_state: dict, last_action) -> np.array:
     explosion_timer = determine_explosion_timer(game_state)
     count_crates, count_enemies = count_destroyable_crates_and_enemies(x, y, game_state, explosion_timer)
 
-    trap_filter = np.array([1, 1, 1, 1]) #determine_trap_filter(game_state, explosion_timer)
-    #print(trap_filter)
+    trap_filter = determine_trap_filter(game_state, explosion_timer)
 
     current_square = determine_current_square(x, y, game_state, count_crates + count_enemies)
     if current_square > 1:
