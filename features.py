@@ -810,26 +810,24 @@ def determine_enemy_value_scored_reward(x, y, game_state: dict, explosion_timer,
 
 
 def determine_is_worth_to_move_crates_scored(x, y, game_state: dict, count_crates, explosion_timer, trap_filter):
-    directions, double_directions = count_destroyable_crates_double_move_directions(x, y, game_state, explosion_timer,
-                                                                                    count_crates)
+    # directions, double_directions = count_destroyable_crates_double_move_directions(x, y, game_state, explosion_timer,
+    #                                                                                count_crates)
+    directions = count_destroyable_crates_directions(x, y, game_state, explosion_timer, count_crates)
     directions = np.array(directions)
-    double_directions = np.array(double_directions)
+    # double_directions = np.array(double_directions)
 
     directions[trap_filter == 0] = 0
-    double_directions[trap_filter == 0] = 0
+    # double_directions[trap_filter == 0] = 0
 
     max_directions = directions.max()
-    max_double_directions = 0 # double_directions.max()
+    # max_double_directions = 0 # double_directions.max()
 
-    max_destroy = max(max_directions, max_double_directions)
+    # max_destroy = max(max_directions, max_double_directions)
 
-    if max_destroy <= count_crates:
+    if max_directions <= count_crates:
         return 4
 
-    if max_directions == max_destroy:
-        return np.random.choice(np.flatnonzero(directions == max_destroy))
-
-    return np.random.choice(np.flatnonzero(double_directions == max_destroy))
+    return np.random.choice(np.flatnonzero(directions == max_directions))
 
 
 def determine_is_worth_to_move_crates_scored_reward(x, y, game_state: dict, count_crates, explosion_timer, trap_filter):
