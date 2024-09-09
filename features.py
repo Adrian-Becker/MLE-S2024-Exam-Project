@@ -8,8 +8,8 @@ MAX_ADDITIONAL_DISTANCE_CRATE_BFS_SEARCH = 3
 MAX_ADDITIONAL_DISTANCE_ENEMY_BFS_SEARCH = 3
 
 SHOULD_ESCAPE_THRESHOLD = 1
-TRAP_FOLLOW_THRESHOLD = 0
-TRAP_FILTER = 8
+TRAP_FOLLOW_THRESHOLD = -1
+TRAP_FILTER = 1
 
 
 def find_distance_to_coin(position, field: np.array):
@@ -170,7 +170,7 @@ def breadth_first_search_coins_scored(position, field, targets):
 
         if distance[current] > max_distance:
             return min_distance, score
-        if targets[current] - distance[current] > 0:
+        if targets[current] - distance[current] >= 0:
             score += 1
             min_distance = min(min_distance, distance[current])
             max_distance = min(max_distance, distance[current] + MAX_ADDITIONAL_DISTANCE_COIN_BFS_SEARCH)
@@ -564,6 +564,7 @@ def breadth_first_search_crates_scored(position, field, game_state, explosion_ti
     todo = [position]
 
     min_distance = math.inf
+    cur_distance = math.inf
     max_score = 0
 
     while len(todo) > 0:
@@ -571,12 +572,13 @@ def breadth_first_search_crates_scored(position, field, game_state, explosion_ti
         x, y = current
 
         count = count_destroyable_crates(x, y, game_state, explosion_timer)
-        if count > 0:
+        if count > 0 and count > max_score:
             min_distance = min(min_distance, distance[current])
-            max_score = max(max_score, count)
+            cur_distance = distance[current]
+            max_score = count
 
-        if distance[current] > min_distance:
-            return min_distance, max_score
+        if distance[current] + 1 > min_distance:
+            return cur_distance, max_score
 
         neighbors = [(x, y) for (x, y) in [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)] if field[x, y] == 0]
         for neighbor in neighbors:
@@ -672,7 +674,7 @@ def determine_crate_value_scored(x, y, game_state: dict, explosion_timer, trap_f
 
     if min_distance < 64:
         scores = np.array([score_up, score_down, score_left, score_right])
-        scores[distances > min_distance] = 0
+        scores[distances > min_distance + 1] = 0
         return np.random.choice(np.flatnonzero(scores == scores.max())), min_distance
     return 4, min_distance
 
@@ -696,7 +698,7 @@ def determine_crate_value_scored_reward(x, y, game_state: dict, explosion_timer,
 
     if min_distance < 64:
         scores = np.array([score_up, score_down, score_left, score_right])
-        scores[distances > min_distance] = 0
+        scores[distances > min_distance + 1] = 0
         results = np.array([0, 0, 0, 0])
         results[scores == scores.max()] = 1
         return results

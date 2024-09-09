@@ -133,29 +133,22 @@ def get_feature_string(features):
 def action_from_features(features):
     current_square = features[0]
     escape_direction = features[1]
-    trap_escape_direction = features[2]
-    coin_direction = features[3]
-    crate_direction = features[4]
-    enemy_direction = features[5]
-    trap_enemy_direction = features[6]
-    can_move_up = features[7]
-    can_move_down = features[8]
-    can_move_left = features[9]
-    can_move_right = features[10]
+    coin_direction = features[2]
+    crate_direction = features[3]
+    enemy_direction = features[4]
+    trap_enemy_direction = features[5]
+    move_direction = features[6]
 
     if current_square == 1:
         return escape_direction
 
-    if trap_escape_direction != 4:
-        return trap_escape_direction
+    if escape_direction != 4:
+        return escape_direction
 
     if trap_enemy_direction != 4:
         if trap_enemy_direction == 6:
             return 4
         return trap_enemy_direction
-
-    if current_square == 3 and coin_direction != 4:
-        return 5
 
     if coin_direction != 4:
         return coin_direction
@@ -166,22 +159,14 @@ def action_from_features(features):
     if enemy_direction != 4:
         return enemy_direction
 
-    if can_move_up:
-        return 0
-    if can_move_down:
-        return 1
-    if can_move_left:
-        return 2
-    if can_move_right:
-        return 3
-
-    return 4
+    return move_direction
 
 
 def act(self, game_state: dict) -> str:
-    # self.last_features = state_to_features(game_state, self.last_action)
-    # self.last_action = action_from_features(self.last_features)
-    # return ACTIONS[self.last_action]
+    self.last_features = state_to_features(game_state, self.last_action)
+    self.last_action = action_from_features(self.last_features)
+    print(self.last_features, self.last_action)
+    return ACTIONS[self.last_action]
     """
     :param self: The same object that is passed to all of your callbacks.
     :param game_state: The dictionary that describes everything on the board.
@@ -241,7 +226,8 @@ def state_to_features(game_state: dict, last_action) -> np.array:
     explosion_timer = determine_explosion_timer(game_state)
     count_crates, count_enemies = count_destroyable_crates_and_enemies(x, y, game_state, explosion_timer)
 
-    trap_filter = determine_trap_filter(game_state, explosion_timer)
+    trap_filter = np.array([1, 1, 1, 1]) #determine_trap_filter(game_state, explosion_timer)
+    #print(trap_filter)
 
     current_square = determine_current_square(x, y, game_state, count_crates + count_enemies)
     if current_square > 1:
@@ -311,8 +297,8 @@ def state_to_features(game_state: dict, last_action) -> np.array:
                                (1 if field[x - 1, y] == 0 else 0),
                                (1 if field[x + 1, y] == 0 else 0)])
         if directions.max() > 0:
-            features.append(4)
-        else:
             features.append(np.random.choice(np.flatnonzero(directions == directions.max())))
+        else:
+            features.append(4)
 
     return tuple(features)
