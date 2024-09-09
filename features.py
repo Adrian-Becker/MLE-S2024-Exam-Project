@@ -577,7 +577,7 @@ def breadth_first_search_crates_scored(position, field, game_state, explosion_ti
             cur_distance = distance[current]
             max_score = count
 
-        if distance[current] + 1 > min_distance:
+        if distance[current] > min_distance + 1:
             return cur_distance, max_score
 
         neighbors = [(x, y) for (x, y) in [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)] if field[x, y] == 0]
@@ -586,7 +586,7 @@ def breadth_first_search_crates_scored(position, field, game_state, explosion_ti
                 distance[neighbor] = distance[current] + 1
                 todo.append(neighbor)
 
-    return min_distance, max_score
+    return cur_distance, max_score
 
 
 def breadth_first_search_enemies_scored(position, field, targets):
@@ -819,7 +819,7 @@ def determine_is_worth_to_move_crates_scored(x, y, game_state: dict, count_crate
     double_directions[trap_filter == 0] = 0
 
     max_directions = directions.max()
-    max_double_directions = double_directions.max()
+    max_double_directions = 0 # double_directions.max()
 
     max_destroy = max(max_directions, max_double_directions)
 
