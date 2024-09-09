@@ -150,6 +150,9 @@ def action_from_features(features):
             return 4
         return trap_enemy_direction
 
+    if current_square == 3 and coin_direction != 4:
+        return 5
+
     if coin_direction != 4:
         return coin_direction
 
@@ -165,7 +168,7 @@ def action_from_features(features):
 def act(self, game_state: dict) -> str:
     self.last_features = state_to_features(game_state, self.last_action)
     self.last_action = action_from_features(self.last_features)
-    print(self.last_features, self.last_action)
+    #print(self.last_features, self.last_action)
     return ACTIONS[self.last_action]
     """
     :param self: The same object that is passed to all of your callbacks.
