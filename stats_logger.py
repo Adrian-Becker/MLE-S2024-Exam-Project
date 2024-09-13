@@ -121,4 +121,5 @@ class StatsLogger:
                         stats_file.write(
                             ", " + stat[5].format(sum(self.histories[stat[1]]) / len(self.histories[stat[1]])))
                     stats_file.write(", " + stat[4].format(self.histories[stat[1]][-1]))
+                stats_file.write(", " + str(runtime))
                 stats_file.write('\n')
