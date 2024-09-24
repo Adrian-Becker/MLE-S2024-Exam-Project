@@ -317,8 +317,8 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     self.round += 1
 
     if self.round % SYMMETRY_SYNC_RATE == 0:
-        self.Q = sync_symmetries(self.Q)
-        self.P = sync_symmetries(self.P)
+        #self.Q = sync_symmetries(self.Q)
+        #self.P = sync_symmetries(self.P)
         pass
 
     if self.round % ROUNDS_PER_SAVE == 0:

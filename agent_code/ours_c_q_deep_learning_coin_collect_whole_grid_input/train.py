@@ -1,3 +1,4 @@
+import time
 from collections import namedtuple, deque
 
 import pickle
@@ -45,6 +46,9 @@ def setup_training(self):
     self.iteration = 0
     self.loss = nn.MSELoss()
     self.optimizer = torch.optim.Adam(self.model.parameters(), lr=LEARNING_RATE_OPTIMIZER)
+    self.point_history = deque([0], maxlen=100)
+    self.round = 0
+    self.start_time = time.time()
 
 
 def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_state: dict, events: List[str]):
@@ -81,7 +85,7 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
 
     self.iteration += 1
 
-    if len(self.transitions) >= MINI_BATCH_SIZE: # and self.iteration % MINI_BATCH_SIZE / 2 == 0:
+    if len(self.transitions) >= MINI_BATCH_SIZE:  # and self.iteration % MINI_BATCH_SIZE / 2 == 0:
         input = []
         next_input = []
         rewards = []
@@ -105,13 +109,19 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
         selected_actions_matrix = torch.zeros(current_q.shape).scatter(1, current_q.argmax(1).unsqueeze(1), 1.0)
 
         target_q = (1 - LEARNING_RATE) * current_q + \
-                   (LEARNING_RATE * (rewards - torch.max(current_q, 1).values + DISCOUNT_FACTOR * q_next_iteration)[:, None] * selected_actions_matrix)
+                   (LEARNING_RATE * (rewards - torch.max(current_q, 1).values + DISCOUNT_FACTOR * q_next_iteration)[:,
+                                    None] * selected_actions_matrix)
         loss = self.loss(current_q, target_q)
         if self.iteration % 300 == 0:
             print(loss)
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
+
+
+def enemy_game_events_occurred(self, enemy_name: str, old_enemy_game_state: dict, enemy_action: str,
+                               enemy_game_state: dict, enemy_events: List[str]):
+    pass
 
 
 def end_of_round(self, last_game_state: dict, last_action: str, events: List[str]):
@@ -133,9 +143,20 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
 
     print(f"Agent scored {last_game_state['self'][1]} points.")
 
+    points = last_game_state['self'][1]
+    self.point_history.append(points)
+
+    avg_points = str(round(sum(list(self.point_history)) / len(self.point_history), 2))
+
+    self.round += 1
+
+    if self.round % 10 == 0:
+        with open("stats.csv", "a") as file:
+            file.write(str(int(time.time() - self.start_time)) + ", " + str(self.round) + ", " + avg_points + "\n")
+
     # Store the model
-    with open("my-saved-model.pt", "wb") as file:
-        pickle.dump(self.model, file)
+    # with open("my-saved-model.pt", "wb") as file:
+    #    pickle.dump(self.model, file)
 
 
 def reward_from_events(self, events: List[str]) -> int:

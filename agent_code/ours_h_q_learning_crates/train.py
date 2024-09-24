@@ -1,6 +1,7 @@
 import math
 import pickle
 import random
+import time
 from collections import deque
 from typing import List
 
@@ -65,6 +66,7 @@ def setup_training(self):
     self.transitions = TransitionHistory(TRANSITION_HISTORY_SIZE)
     self.point_history = deque([0], maxlen=100)
     self.round = 0
+    self.start_time = time.time()
 
 
 def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_state: dict, events: List[str]):
@@ -295,7 +297,7 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     self.round += 1
 
     if self.round % SYMMETRY_SYNC_RATE == 0:
-        sync_symmetries(self)
+        #sync_symmetries(self)
         pass
 
     if self.round % ROUNDS_PER_SAVE == 0:
@@ -314,6 +316,11 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     self.point_history.append(points)
 
     avg_points = str(round(sum(list(self.point_history)) / len(self.point_history), 2))
+
+    if self.round % 10 == 0:
+        with open("stats.csv", "a") as file:
+            file.write(str(int(time.time() - self.start_time)) + ", " + str(self.round) + ", " + avg_points + "\n")
+
     print(
         f"Round \033[93m\033[1m{self.round}\033[0m of 70000; avg_points=\033[92m\033[1m{avg_points}\033[0m; points=\033[92m{points}\033[0m; P(copy enemy)=\033[96m{prob_enemy_copy}%\033[0m; P(exploration)=\033[96m{prob_exploration}%\033[0m")
 

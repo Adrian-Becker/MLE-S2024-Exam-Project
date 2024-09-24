@@ -58,10 +58,11 @@ def setup_training(self):
     self.bomb_history = deque([0], maxlen=100)
     self.time_history = deque([time.time()], maxlen=100)
     self.rewards_history = deque([0], maxlen=100)
-    self.round = 25677
+    self.round = 0
     self.bombs_dropped = 0
     self.save = 0
     self.total_rewards = 0
+    self.start_time = time.time()
 
     if not os.path.exists("tables"):
         os.makedirs("tables")
@@ -379,7 +380,8 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
 
     if self.round % 10 == 0:
         with open("stats.csv", "a") as stats:
-            stats.write(current_round + ", " + avg_points + ", " + points + ", " + avg_bombs + ", " + bombs + ", " +
+            stats.write(str(round(time.time() - self.start_time)) + ", " + current_round + ", " + avg_points + ", " +
+                        points + ", " + avg_bombs + ", " + bombs + ", " +
                         prob_enemy_copy + ", " + prob_exploration + ", " + reward_average + ", " + rewards + "\n")
 
 

@@ -14,18 +14,18 @@ def setup_training(self):
 
 def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_state: dict, events: list[str]):
     #features_old = state_to_features(old_game_state)
-    features_new = state_to_features(new_game_state)
+    #features_new = state_to_features(new_game_state)
     #add_custom_events(self, old_game_state, self_action, new_game_state, events, features_old, features_new)
     # add_custom_events(self, old_game_state, self_action, new_game_state, events, features_old, features_new)
-    print(f"Events: {events}")
+    #print(f"Events: {events}")
     #print(f"Old State: {features_old}")
-    print(f"New State: {features_new}")
-    print(f"Rewards: {reward_from_events(self, events)}")
+    #print(f"New State: {features_new}")
+    #print(f"Rewards: {reward_from_events(self, events)}")
 
     # explosion_timer = determine_explosion_timer(new_game_state)
     # print(f"Coin direction: {determine_coin_value_scored(x, y, new_game_state, explosion_timer)}")
     # print(f"Crate direction: {determine_crate_value_scored(x, y, new_game_state, explosion_timer)}")
-
+    pass
 
 def enemy_game_events_occurred(self, enemy_name: str, old_enemy_game_state: dict, enemy_action: str,
                                enemy_game_state: dict, enemy_events: list[str]):

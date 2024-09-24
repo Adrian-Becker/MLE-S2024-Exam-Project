@@ -166,10 +166,10 @@ def action_from_features(features):
 
 
 def act(self, game_state: dict) -> str:
-    self.last_features = state_to_features(game_state, self.last_action)
-    self.last_action = action_from_features(self.last_features)
+    #self.last_features = state_to_features(game_state, self.last_action)
+    #self.last_action = action_from_features(self.last_features)
     #print(self.last_features, self.last_action)
-    return ACTIONS[self.last_action]
+    #return ACTIONS[self.last_action]
     """
     :param self: The same object that is passed to all of your callbacks.
     :param game_state: The dictionary that describes everything on the board.
@@ -193,9 +193,9 @@ def act(self, game_state: dict) -> str:
     best_action_index = np.array(list(map(lambda action: self.Q[self.last_features][action], ACTION_INDICES))).argmax()
     action = ACTIONS[best_action_index]
     if not self.train:
-        print(f"{action} {self.last_features}")
-        print(f"{get_feature_string(self.last_features)}")
-        print(self.Q[self.last_features], "\n")
+        #print(f"{action} {self.last_features}")
+        #print(f"{get_feature_string(self.last_features)}")
+        #print(self.Q[self.last_features], "\n")
         pass
     return action
 

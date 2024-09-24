@@ -535,18 +535,20 @@ def state_to_features(game_state: dict) -> np.array:
 
     count_crates, count_enemies = count_destroyable_crates_and_enemies(x, y, game_state, explosion_timer)
 
-    features.append(determine_current_square(x, y, game_state, count_crates + count_enemies))
+    current_square = determine_current_square(x, y, game_state, count_crates + count_enemies)
+
+    features.append(current_square)
 
     features.append(determine_coin_value(x, y, game_state, explosion_timer))
 
-    if count_crates == 0:
-        features.append(determine_crate_value(x, y, game_state, explosion_timer))
-    else:
+    if count_crates != 0 and current_square > 1:
         features.append(determine_is_worth_to_move_crates(x, y, game_state, count_crates, explosion_timer))
-
-    if count_enemies == 0:
-        features.append(determine_enemy_value(x, y, game_state, explosion_timer))
     else:
+        features.append(determine_crate_value(x, y, game_state, explosion_timer))
+
+    if count_enemies != 0 and current_square > 1:
         features.append(determine_is_worth_to_move_enemies(x, y, game_state, count_enemies, explosion_timer))
+    else:
+        features.append(determine_enemy_value(x, y, game_state, explosion_timer))
 
     return tuple(features)
